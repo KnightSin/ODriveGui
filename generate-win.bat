@@ -16,7 +16,7 @@
 :: xcode4            Generate Apple Xcode 4 project files
 
 :: Set the project name and generator here. Leave the name empty to ask for it while generating
-set _projectname=
+set _projectname=ODriveGui
 set _generator=vs2019
 
 
