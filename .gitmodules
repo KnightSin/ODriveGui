@@ -1,0 +1,3 @@
+[submodule "modules/BatteryEngine"]
+	path = modules/BatteryEngine
+	url = https://github.com/HerrNamenlos123/BatteryEngine.git
