@@ -5,38 +5,6 @@
 
 namespace libusb {
 
-    class context {     // libusb context as a singleton, gets deleted automatically
-
-        context() {
-            if (libusb_init(&_context) < 0) {
-                throw std::runtime_error("[libusb]: libusb could not be initialized!");
-            }
-        }
-
-    public:
-        ~context() {
-            libusb_exit(_context);
-        }
-
-        static libusb_context* get() {
-            return getInstance()._context;
-        }
-
-        libusb_context* operator->() {
-            return _context;
-        }
-
-        context(context const&) = delete;
-        void operator=(context const&) = delete;
-        static context& getInstance() {
-            static context instance;
-            return instance;
-        }
-
-    private:
-        libusb_context* _context = nullptr;
-    };
-
 
 
 
@@ -161,6 +129,9 @@ namespace libusb {
     std::vector<Device>& DeviceList::getDevices() {
         return devices;
     }
+
+
+
 
 
 

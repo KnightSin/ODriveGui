@@ -6,13 +6,7 @@
 
 class BatteryApp : public Battery::Application {
 
-	// Here you can store data for the entire application, but it is encouraged 
-	// to only use layers and then store the actual data in the corresponding layer
-	std::shared_ptr<UserInterface> ui;		// This is the user interface layer based on ImGui
-
-	std::unique_ptr<libusb::DeviceList> devList;
-	std::vector<std::reference_wrapper<libusb::Device>> ODriveUSB;
-	std::vector<ODrive> ODrives;
+	std::shared_ptr<UserInterface> ui;
 
 public:
 	BatteryApp();
