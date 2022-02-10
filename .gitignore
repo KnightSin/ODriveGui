@@ -39,3 +39,4 @@
 bin/
 build/
 !premake5.exe
+!lib/**

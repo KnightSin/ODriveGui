@@ -2,43 +2,75 @@
 #include "pch.h"
 #include "BatteryApp.h"
 
-// Here you can define the start size of the window and 
-// optionally the application name (%appdata% folder and the window title)
-BatteryApp::BatteryApp() : Battery::Application(600, 600, "MyApplication") {	// Called before anything else, engine core not initialized yet!
-	LOG_SET_LOGLEVEL(BATTERY_LOG_LEVEL_DEBUG);
+void BatteryApp::enumerateODrives() {
+
+	LOG_DEBUG("Scanning devices...");
+	devList = std::make_unique<libusb::DeviceList>();
+	LOG_DEBUG("Done");
+
+	for (auto& device : devList->getDevices()) {
+		//LOG_DEBUG("Device: VID={:04x}, PID={:04x} -> {}", device.info.vendorID, device.info.productID, device.info.description);
+		if (device.info.vendorID == 0x1209 && device.info.productID == 0x0D32) {
+			LOG_ERROR("ODrive V3.6 was detected!");
+			ODriveUSB.push_back(device);
+		}
+	}
+
+	for (auto& odrv : ODriveUSB) {
+		odrv.get().open(2);
+		ODrives.push_back(ODrive(odrv.get()));
+	}
 }
 
-bool BatteryApp::OnStartup() {		// Called once on startup, engine is initializedby  now
+BatteryApp::BatteryApp() : Battery::Application(600, 600, "MyApplication") {
+	LOG_SET_LOGLEVEL(BATTERY_LOG_LEVEL_DEBUG);
+	//libusb::init();
+}
 
-	// Here you can initialize everything
+bool BatteryApp::OnStartup() {
 
-	ui = std::make_shared<UserInterface>();		// User interface layer is created and pushed onto the layer stack as an overlay
-	PushOverlay(ui);							// PushLayer() or PushOverlay(), overlays are always above normal layers
+	ui = std::make_shared<UserInterface>();
+	PushOverlay(ui);
+	
+	enumerateODrives();
 
-	LOG_DEBUG("Application loaded");
+	if (ODrives.size() == 0) {
+		LOG_ERROR("No ODrives have been found!");
+		return false;
+	}
+
 	return true;
 }
 
-void BatteryApp::OnUpdate() {		// Called every frame before render, used for calculations
+void BatteryApp::OnUpdate() {
+
+	ODrives[0].sendRequest(0x0180, 0x0400, {}, 0x409B);
+	//ODrives[0].write(&buffer[0], buffer.size());
+
+	auto received = ODrives[0].read(32);
+	std::cout << "Received [" << received.size() << "]:";
+	for (size_t i = 0; i < received.size(); i++) {
+		std::cout << (int)received[i] << " ";
+	}
+	std::cout << std::endl;
 
 }
 
-void BatteryApp::OnRender() {		// Called every frame after update, used to display calculated results onto the screen
+void BatteryApp::OnRender() {
 
 }
 
-void BatteryApp::OnShutdown() {		// Called once on shutdown, engine is still initialized
+void BatteryApp::OnShutdown() {
 
 }
 
-void BatteryApp::OnEvent(Battery::Event* e) {		// Called when an event arrives
-	if (e->GetType() == Battery::EventType::WindowClose) {		// This filters the event type to a WindowClose event (X pressed)
+void BatteryApp::OnEvent(Battery::Event* e) {
+	if (e->GetType() == Battery::EventType::WindowClose) {
 		CloseApplication();
 	}
 }
 
-// And finally, this creates the actual application from your class defined above.
-Battery::Application* Battery::CreateApplication() {	// DO NOT ALTER!
+Battery::Application* Battery::CreateApplication() {
 	return new BatteryApp();
 }
 

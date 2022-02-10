@@ -1,3 +1,6 @@
 [submodule "modules/BatteryEngine"]
 	path = modules/BatteryEngine
 	url = https://github.com/HerrNamenlos123/BatteryEngine.git
+[submodule "modules/ODriveNativeLib"]
+	path = modules/ODriveNativeLib
+	url = https://github.com/F-WuTS/ODriveNativeLib.git

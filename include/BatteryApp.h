@@ -1,6 +1,8 @@
 
 #include "pch.h"
 #include "UserInterface.h"
+#include "libusbcpp.h"
+#include "ODrive.h"
 
 class BatteryApp : public Battery::Application {
 
@@ -8,8 +10,14 @@ class BatteryApp : public Battery::Application {
 	// to only use layers and then store the actual data in the corresponding layer
 	std::shared_ptr<UserInterface> ui;		// This is the user interface layer based on ImGui
 
+	std::unique_ptr<libusb::DeviceList> devList;
+	std::vector<std::reference_wrapper<libusb::Device>> ODriveUSB;
+	std::vector<ODrive> ODrives;
+
 public:
 	BatteryApp();
+
+	void enumerateODrives();
 
 	bool OnStartup() override;
 	void OnUpdate() override;

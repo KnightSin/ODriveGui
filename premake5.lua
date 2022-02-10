@@ -74,13 +74,20 @@ project (projectName)
 
     -- Include directories for the compiler
     includedirs { "include" }
+    includedirs { "modules/ODriveNativeLib/src/**" }
  
 
 
     -- Main source files (all files in the project view)
     files { "include/**" }
     files { "src/**" }
+    files { "modules/ODriveNativeLib/src/**" }
 
+
+
+    -- libusb dependency
+    libdirs "lib"
+    links "libusb-1.0"
 
 
     -- Load the BatteryEngine dependency
@@ -88,4 +95,4 @@ project (projectName)
     includedirs { batteryIncludeDirs }
     links { batteryLinkFiles }
 
-    --linkoptions { "/IGNORE:4099" }  -- Ignore warning that no .pdb file is found for debugging
+    linkoptions { "/IGNORE:4099" }  -- Ignore warning that no .pdb file is found for debugging
