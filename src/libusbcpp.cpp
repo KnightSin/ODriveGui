@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "libusbcpp.h"
 #include <exception>
+#include <chrono>
 
 namespace libusb {
 
@@ -14,56 +15,74 @@ namespace libusb {
     // ===                Device class                  ===
     // ====================================================
 
-    Device::Device() {
-        
+    device::device(libusb_device_handle* handle) {
+        this->handle = handle;
+        if (!handle) {
+            throw std::runtime_error("[libusb]: Cannot construct a device with a null handle!");
+        }
     }
 
-    Device::Device(const DeviceInfo& info) {
-        this->info = info;
-    }
-
-    Device::~Device() {
+    device::~device() {
         close();
     }
 
-    void Device::open(int interface) {
+    void device::claimInterface(int interface) {
 
-        if (info.rawDevice == nullptr) {
-            throw std::runtime_error("[libusb]: Can't open USB device: No device was chosen!");
-        }
+        if (!open)
+            return;
 
-        libusb_device_handle* handle = nullptr;
-        if (libusb_open(info.rawDevice, &handle) != LIBUSB_SUCCESS) {
-            throw std::runtime_error("[libusb]: Failed to open USB device '" + info.description + "'");
-        }
-
-        this->handle = handle;
-        this->interface = interface;
-
-        // Now claim the interface
-        if (libusb_kernel_driver_active(handle, 0) == 1) {
-            if (libusb_detach_kernel_driver(handle, 0) == LIBUSB_SUCCESS) {
-                throw std::runtime_error("[libusb]: Failed to open USB device '" + info.description + "': Can't detach Kernel driver!");
+        if (libusb_kernel_driver_active(handle, interface) == 1) {
+            if (libusb_detach_kernel_driver(handle, interface) == LIBUSB_SUCCESS) {
+                throw std::runtime_error("[libusb]: Failed to open USB device: Can't detach Kernel driver!");
             }
         }
 
         if (libusb_claim_interface(handle, interface) < 0) {
-            throw std::runtime_error("[libusb]: Failed to open USB device '" + info.description + "': Cannot claim interface!");
+            throw std::runtime_error("[libusb]: Failed to open USB device: Cannot claim interface!");
+        }
+
+        interfaces.push_back(interface);
+    }
+
+    void device::close() {
+        if (open) {
+            for (int interface : interfaces) {
+                libusb_release_interface(handle, interface);
+            }
+            libusb_close(handle); 
+            open = false;
         }
     }
 
-    void Device::close() {
-        if (handle) {
-            libusb_release_interface(handle, interface);
-            libusb_close(handle);
-            handle = nullptr;
+    deviceInfo device::getInfo() {
+
+        if (!open)
+            return deviceInfo();
+
+        libusb_device* dev = libusb_get_device(handle);
+        if (dev == nullptr) {
+            return deviceInfo();
         }
+
+        struct libusb_device_descriptor desc;
+        if (libusb_get_device_descriptor(dev, &desc) != LIBUSB_SUCCESS) {
+            return deviceInfo();
+        }
+
+        unsigned char buffer[1024];
+        size_t length = libusb_get_string_descriptor_ascii(handle, desc.iProduct, buffer, sizeof(buffer));
+
+        libusb::deviceInfo device;
+        device.vendorID = desc.idVendor;
+        device.productID = desc.idProduct;
+        device.description = std::string((const char*)buffer, length);
+        return device;
     }
 
-    std::vector<uint8_t> Device::bulkRead(size_t expectedLength) {
+    std::vector<uint8_t> device::bulkRead(size_t expectedLength) {
 
-        if (!handle) {
-            throw std::runtime_error("[libusb]: Device is invalid!");
+        if (!open) {
+            return {};
         }
 
         std::vector<uint8_t> buffer;
@@ -73,31 +92,42 @@ namespace libusb {
         }
 
         int transferred;
-        if (libusb_bulk_transfer(handle, (0x83 | LIBUSB_ENDPOINT_IN), &buffer[0], (int)expectedLength, &transferred, 1000) != LIBUSB_SUCCESS) {
-            return std::vector<uint8_t>();
+        try {
+            if (libusb_bulk_transfer(handle, (0x83 | LIBUSB_ENDPOINT_IN), &buffer[0], (int)expectedLength, &transferred, 1000) != LIBUSB_SUCCESS) {
+                return std::vector<uint8_t>();
+            }
+        }
+        catch (...) {
+            return {};
         }
 
         buffer.resize(transferred);
         return buffer;
     }
 
-    size_t Device::bulkWrite(std::vector<uint8_t> data) {
+    size_t device::bulkWrite(std::vector<uint8_t> data) {
         return bulkWrite((uint8_t*)&data[0], data.size());
     }
 
-    size_t Device::bulkWrite(const std::string& data) {
+    size_t device::bulkWrite(const std::string& data) {
         return bulkWrite((uint8_t*)data.c_str(), data.length());
     }
 
-    size_t Device::bulkWrite(uint8_t* data, size_t length) {
+    size_t device::bulkWrite(uint8_t* data, size_t length) {
 
-        if (!handle) {
-            throw std::runtime_error("[libusb]: Device is invalid!");
+        if (!open) {
+            return -1;
         }
-        
-        int transferred;
-        if (libusb_bulk_transfer(handle, (0x03 | LIBUSB_ENDPOINT_OUT), data, (int)length, &transferred, 1000) != LIBUSB_SUCCESS) {
-            return 0;
+
+        int transferred = 0;
+        try {
+            int errorCode = libusb_bulk_transfer(handle, (0x03 | LIBUSB_ENDPOINT_OUT), data, (int)length, &transferred, 1000);
+            if (errorCode != LIBUSB_SUCCESS) {
+                return -1;
+            }
+        }
+        catch (...) {
+            return -1;
         }
 
         return transferred;
@@ -106,30 +136,65 @@ namespace libusb {
 
 
 
+
     // ========================================================
-    // ===                DeviceList class                  ===
+    // ===              HotplugListener class               ===
     // ========================================================
 
-    DeviceList::DeviceList() {
-        size_t cnt = libusb_get_device_list(context::get(), &rawDeviceList);
-        if (cnt < 0) {
-            throw std::runtime_error("[libusb]: Unable to retrieve device list!");
+    HotplugListener::~HotplugListener() {
+        stop();
+    }
+
+    void HotplugListener::start(std::function<void(std::shared_ptr<device> device)> onConnect, float interval) {
+        using namespace std::placeholders;
+
+        running = true;
+        listener = std::thread(std::bind(&HotplugListener::listen, this, _1, _2), onConnect, interval);
+    }
+
+    void HotplugListener::scanOnce(std::function<void(std::shared_ptr<device> device)> onConnect) {
+
+        try {
+            auto newDevices = scanDevices(context);
+            for (auto device : newDevices) {
+                if (!isDeviceKnown(device)) {
+                    onConnect(openDevice(context, device.vendorID, device.productID));
+                }
+            }
+
+            knownDevices.clear();
+            knownDevices = std::move(newDevices);
         }
-        
-        for (DeviceInfo& devInfo : scanDevices(rawDeviceList, cnt)) {
-            devices.emplace_back(devInfo);
+        catch (...) {}
+    }
+
+    void HotplugListener::stop() {
+        if (running) {
+            running = false;
+            listener.join();
         }
     }
 
-    DeviceList::~DeviceList() {
-        devices.clear();
-        libusb_free_device_list(rawDeviceList, 1);
+    bool HotplugListener::isDeviceKnown(deviceInfo& info) {
+        for (auto device : knownDevices) {
+            if (device.vendorID == info.vendorID && device.productID == info.productID) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
-    std::vector<Device>& DeviceList::getDevices() {
-        return devices;
-    }
+    void HotplugListener::listen(std::function<void(std::shared_ptr<device> device)> onConnect, float interval) {
 
+        while (running) {
+
+            scanOnce(onConnect);
+
+            Battery::Sleep(interval);
+
+        }
+    }
 
 
 
@@ -140,12 +205,14 @@ namespace libusb {
     // ===               General functions              ===
     // ====================================================
 
-    void init() {
-        context::getInstance();     // This creates the singleton, gets deleted automatically
-    }
+    std::vector<libusb::deviceInfo> scanDevices(const context& ctx) {
+        std::vector<libusb::deviceInfo> devices;
 
-    std::vector<libusb::DeviceInfo> scanDevices(libusb_device** rawDeviceList, size_t count) {
-        std::vector<libusb::DeviceInfo> devices;
+        libusb_device** rawDeviceList;
+        size_t count = libusb_get_device_list(ctx, &rawDeviceList);
+
+        if (count < 0)
+            return devices;
 
         for (size_t i = 0; i < count; i++) {
             libusb_device* rawDevice = rawDeviceList[i];
@@ -165,60 +232,65 @@ namespace libusb {
             // Parse the description text
             unsigned char buffer[1024];
             size_t length = libusb_get_string_descriptor_ascii(handle, desc.iProduct, buffer, sizeof(buffer));
+
+            libusb_close(handle);
+
             if (length < 0) {
                 continue;
             }
 
-            libusb_close(handle);
-
-            libusb::DeviceInfo device;
+            libusb::deviceInfo device;
             device.vendorID = desc.idVendor;
             device.productID = desc.idProduct;
             device.description = std::string((const char*)buffer, length);
-            device.rawDevice = rawDevice;
 
             devices.push_back(std::move(device));
         }
 
+        libusb_free_device_list(rawDeviceList, 1);
         return devices;
     }
 
+    std::shared_ptr<device> openDevice(const context& ctx, uint16_t vendorID, uint16_t productID) {
+
+        libusb_device** rawDeviceList;
+        size_t count = libusb_get_device_list(ctx, &rawDeviceList);
+
+        if (count < 0)
+            return nullptr;
+
+        libusb_device* found = nullptr;
+        for (size_t i = 0; i < count; i++) {
+            libusb_device* rawDevice = rawDeviceList[i];
+
+            // Get device information
+            struct libusb_device_descriptor desc;
+            if (libusb_get_device_descriptor(rawDevice, &desc) != LIBUSB_SUCCESS) {
+                continue;   // Jump back to top
+            }
+
+            // Check if it's the device we are looking for
+            if (desc.idVendor == vendorID && desc.idProduct == productID) {
+                found = rawDevice;
+            }
+        }
+
+        libusb_device_handle* handle = nullptr;
+        if (found) {
+            if (libusb_open(found, &handle) < 0) {
+                handle = nullptr;
+            }
+        }
+
+        libusb_free_device_list(rawDeviceList, 1);
+
+        if (handle == nullptr) {
+            return nullptr;
+        }
+
+        LOG_WARN("Opened device with handle 0x{:08X}", (size_t)handle);
+
+        return std::make_shared<device>(handle);
+    }
+
 }
-
-
-
-/*
-
-
-    e = libusb_bulk_transfer(handle,BULK_EP_IN,my_string,length,&transferred,0);
-    if(e == 0 && transferred == length)
-    {
-        printf("\nWrite successful!");
-        printf("\nSent %d bytes with string: %s\n", transferred, my_string);
-    }
-    else
-        printf("\nError in write! e = %d and transferred = %d\n",e,transferred);
-
-    sleep(3);
-    i = 0;
-
-    for(i = 0; i < length; i++)
-    {
-        e = libusb_bulk_transfer(handle,BULK_EP_OUT,my_string1,64,&received,0);  //64 : Max Packet Lenght
-        if(e == 0)
-        {
-            printf("\nReceived: ");
-            printf("%c",my_string1[i]);    //will read a string from lcp2148
-            sleep(1);
-        }
-        else
-        {
-            printf("\nError in read! e = %d and received = %d\n",e,received);
-            return -1;
-        }
-    }
-
-
-    e = libusb_release_interface(handle, 0);
-
-*/

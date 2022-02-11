@@ -4,33 +4,36 @@
 #include "Battery/AllegroDeps.h"
 #include "Backend.h"
 
-BatteryApp::BatteryApp() : Battery::Application(1200, 800, "MyApplication") {
+BatteryApp::BatteryApp() : Battery::Application(1280, 720, "ODriveGui") {
 	LOG_SET_LOGLEVEL(BATTERY_LOG_LEVEL_DEBUG);
-	//libusb::init();
 }
 
 bool BatteryApp::OnStartup() {
 
+	window.SetTitle("ODriveGui");
+	backend = std::make_unique<Backend>();
+
 	ui = std::make_shared<UserInterface>();
 	PushOverlay(ui);
-	
-	Backend::getInstance().init();
 
 	return true;
 }
 
 void BatteryApp::OnUpdate() {
+	if (framecount % 20 == 1) {
+		backend->scanDevices();
+		backend->updateEndpoints();
 
-	/*ODrives[0].sendReadRequest(0x01, 0x0004, {}, 0x409B);
-	//ODrives[0].write(&buffer[0], buffer.size());
-
-	auto received = ODrives[0].read(32);
-	std::cout << "Received [" << received.size() << "]:";
-	for (size_t i = 0; i < received.size(); i++) {
-		std::cout << (int)received[i] << " ";
+		// Request all serial numbers as a health check of the connection
+		for (int i = 0; i < MAX_NUMBER_OF_ODRIVES; i++) {
+			if (backend->odrives[i]) {
+				try {
+					backend->odrives[i]->read<uint64_t>("serial_number");
+				}
+				catch (...) {}
+			}
+		}
 	}
-	std::cout << std::endl;*/
-
 }
 
 void BatteryApp::OnRender() {
@@ -38,7 +41,7 @@ void BatteryApp::OnRender() {
 }
 
 void BatteryApp::OnShutdown() {
-	Backend::getInstance().cleanup();
+	backend.reset();
 }
 
 void BatteryApp::OnEvent(Battery::Event* e) {

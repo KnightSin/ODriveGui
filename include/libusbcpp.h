@@ -6,88 +6,65 @@
 #pragma warning( disable : 4200 )
 #include <libusb.h>
 
+// TODO: libusb bug: windows_winusb.c -> line 1146
+
 // TODO: 
 // libusb_open_device_with_vid_pid(ctx, VID, PID);
 // libusb_claim_interface(handle, 1);
 
 namespace libusb {
 
-	struct no_deleter {
-		template <typename T> 
-		void operator() (T const&) const noexcept { }
-	};
-
-    class context {     // libusb context as a singleton, gets deleted automatically
-
+    class context {
+    public:
         context() {
             if (libusb_init(&_context) < 0) {
                 throw std::runtime_error("[libusb]: libusb could not be initialized!");
             }
         }
 
-    public:
         ~context() {
             libusb_exit(_context);
         }
 
-        static libusb_context* get() {
-            return getInstance()._context;
-        }
-
-        libusb_context* operator->() {
+        operator libusb_context*() const {
             return _context;
         }
 
         context(context const&) = delete;
         void operator=(context const&) = delete;
-        static context& getInstance() {
-            static context instance;
-            return instance;
-        }
 
     private:
         libusb_context* _context = nullptr;
     };
 
-	struct DeviceInfo {
+	struct deviceInfo {
 		uint16_t vendorID = 0x00;
 		uint16_t productID = 0x00;
 		std::string description;
-		libusb_device* rawDevice = nullptr;
 	};
 
-	class Device {
+	class device {
 	public:
+		device(libusb_device_handle* handle);
+		~device();
 
-		DeviceInfo info;
-
-		Device();
-		Device(const DeviceInfo& info);
-		~Device();
-
-		void open(int interface);
+		void claimInterface(int interface);
 		void close();
+
+        deviceInfo getInfo();
 
 		std::vector<uint8_t> bulkRead(size_t expectedLength);
 		size_t bulkWrite(std::vector<uint8_t> data);
 		size_t bulkWrite(const std::string& data);
 		size_t bulkWrite(uint8_t* data, size_t length);
 
+        device(device const&) = delete;
+        void operator=(device const&) = delete;
+
 	private:
 		libusb_device_handle* handle = nullptr;
-		int interface = 0;
-	};
-
-	class DeviceList {
-	public:
-		DeviceList();
-		~DeviceList();
-
-		std::vector<Device>& getDevices();
-
-	private:
-		std::vector<Device> devices;
-		libusb_device** rawDeviceList = nullptr;
+        std::vector<int> interfaces;
+        bool open = true;
 	};
 
 
@@ -96,10 +73,29 @@ namespace libusb {
 
 
 	// ========================================================
-	// ===                Hotplug utilities                 ===
+	// ===              HotplugListener class               ===
 	// ========================================================
 
-    class HotplugHandler {
+    class HotplugListener {
+    public:
+        HotplugListener(context& ctx) : context(ctx) {}
+        ~HotplugListener();
+
+        void start(std::function<void(std::shared_ptr<device> device)> onConnect, float interval = 0.2f);
+        void scanOnce(std::function<void(std::shared_ptr<device> device)> onConnect);
+        void stop();
+
+    private:
+        bool isDeviceKnown(deviceInfo& info);
+        void listen(std::function<void(std::shared_ptr<device> device)> onConnect, float interval);
+
+        std::thread listener;
+        std::atomic<bool> running = false;
+        std::vector<deviceInfo> knownDevices;
+        libusb::context& context;
+    };
+
+    /*class HotplugHandler {
     public:
         HotplugHandler() {
             if (!libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)) {
@@ -191,19 +187,19 @@ namespace libusb {
 
         std::atomic<bool> running = false;
         std::thread listener;
-    };
+    };*/
 
 
 
 
 
 
-	// ====================================================
-	// ===               General functions              ===
-	// ====================================================
+    // ====================================================
+    // ===               General functions              ===
+    // ====================================================
 
-	void init();
+    std::vector<deviceInfo> scanDevices(const context& ctx);
 
-	std::vector<DeviceInfo> scanDevices(libusb_device** rawDeviceList, size_t count);
+    std::shared_ptr<device> openDevice(const context& ctx, uint16_t vendorID, uint16_t productID);
 
 }

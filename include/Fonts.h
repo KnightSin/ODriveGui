@@ -7,7 +7,8 @@
 struct FontContainer : public Battery::FontContainer {
 
 	// Here you can load any number of fonts to be used throughout the application
-	ImFont* openSans25 = Battery::ImGuiUtils::AddEmbeddedFont(OpenSansFontData_compressed_data, OpenSansFontData_compressed_size, 25);
 	ImFont* openSans18 = Battery::ImGuiUtils::AddEmbeddedFont(OpenSansFontData_compressed_data, OpenSansFontData_compressed_size, 18);
+	ImFont* openSans21 = Battery::ImGuiUtils::AddEmbeddedFont(OpenSansFontData_compressed_data, OpenSansFontData_compressed_size, 21);
+	ImFont* openSans25 = Battery::ImGuiUtils::AddEmbeddedFont(OpenSansFontData_compressed_data, OpenSansFontData_compressed_size, 25);
 
 };
