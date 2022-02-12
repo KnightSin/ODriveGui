@@ -20,15 +20,15 @@ bool BatteryApp::OnStartup() {
 }
 
 void BatteryApp::OnUpdate() {
-	if (framecount % 20 == 1) {
+	if (framecount % 40 == 1) {
 		backend->scanDevices();
 		backend->updateEndpoints();
 
-		// Request all serial numbers as a health check of the connection
+		// Request all errors as a health check of the connection
 		for (int i = 0; i < MAX_NUMBER_OF_ODRIVES; i++) {
 			if (backend->odrives[i]) {
 				try {
-					backend->odrives[i]->read<uint64_t>("serial_number");
+					backend->odrives[i]->updateErrors();
 				}
 				catch (...) {}
 			}

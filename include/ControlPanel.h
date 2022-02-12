@@ -75,16 +75,22 @@ public:
 	}
 
 	template<typename T>
-	void drawNumericEndpoint(ImVec4 color, const std::string& path, const char* fmt) {
+	void drawNumericEndpoint(ImVec4 color, const std::string& path, const char* fmt, const std::string& type) {
 		T value = getEndpointValue<T>(backend->values[path]);
 		T oldValue = getEndpointValue<T>(backend->oldValues[path]);
 		ImVec4 col = (value != oldValue) ? (ImVec4(RED)) : (color);
 		ImGui::TextColored(col, fmt, value);
+
+		if (ImGui::IsItemHovered()) {
+			ImGui::BeginTooltip();
+			ImGui::TextColored(color, "%s", type.c_str());
+			ImGui::EndTooltip();
+		}
 	}
 
 	void drawNumericEndpoint(const std::string& path, size_t i, Endpoint& endpoint, std::shared_ptr<ODrive>& odrive) {
 		if (endpoint.type == "float") {
-			drawNumericEndpoint<float>(COLOR_FLOAT, path, "%.06ff");
+			drawNumericEndpoint<float>(COLOR_FLOAT, path, "%.06ff", endpoint.type);
 			MAKE_IMGUI_TEXT_INPUT(
 				float,
 				floatValues,
@@ -93,7 +99,7 @@ public:
 			);
 		}
 		else if (endpoint.type == "uint8") {
-			drawNumericEndpoint<uint8_t>(COLOR_UINT, path, "%d");
+			drawNumericEndpoint<uint8_t>(COLOR_UINT, path, "%d", endpoint.type);
 			MAKE_IMGUI_TEXT_INPUT(
 				uint8_t,
 				uint8Values,
@@ -102,7 +108,7 @@ public:
 			);
 		}
 		else if (endpoint.type == "uint16") {
-			drawNumericEndpoint<uint8_t>(COLOR_UINT, path, "%d");
+			drawNumericEndpoint<uint8_t>(COLOR_UINT, path, "%d", endpoint.type);
 			MAKE_IMGUI_TEXT_INPUT(
 				uint16_t,
 				uint16Values,
@@ -111,7 +117,7 @@ public:
 			);
 		}
 		else if (endpoint.type == "uint32") {
-			drawNumericEndpoint<uint32_t>(COLOR_UINT, path, "%d");
+			drawNumericEndpoint<uint32_t>(COLOR_UINT, path, "%d", endpoint.type);
 			MAKE_IMGUI_TEXT_INPUT(
 				uint32_t,
 				uint32Values,
@@ -120,7 +126,7 @@ public:
 			);
 		}
 		else if (endpoint.type == "int32") {
-			drawNumericEndpoint<int32_t>(COLOR_UINT, path, "%d");
+			drawNumericEndpoint<int32_t>(COLOR_UINT, path, "%d", endpoint.type);
 			MAKE_IMGUI_TEXT_INPUT(
 				int32_t,
 				int32Values,
@@ -129,7 +135,7 @@ public:
 			);
 		}
 		else if (endpoint.type == "uint64") {
-			drawNumericEndpoint<uint64_t>(COLOR_UINT, path, "%d");
+			drawNumericEndpoint<uint64_t>(COLOR_UINT, path, "%d", endpoint.type);
 			MAKE_IMGUI_TEXT_INPUT(
 				uint64_t,
 				uint64Values,
@@ -139,7 +145,7 @@ public:
 		}
 		else if (endpoint.type == "bool") {
 			bool v = getEndpointValue<bool>(backend->values[path]);
-			drawNumericEndpoint<bool>(COLOR_BOOL, path, v ? "true" : "false");
+			drawNumericEndpoint<bool>(COLOR_BOOL, path, v ? "true" : "false", endpoint.type);
 			if (!endpoint.readonly) {
 				ImGui::SameLine();
 				ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 200);

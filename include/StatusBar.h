@@ -6,6 +6,7 @@
 #include <map>
 
 #include "ODrive.h"
+#include "ODriveDocs.h"
 #include "Backend.h"
 #include "config.h"
 
@@ -15,9 +16,10 @@ class StatusBar : public Battery::ImGuiPanel<> {
 	std::map<std::string, uint64_t> endpointValues;		// uint64_t must be interpreted as the correct data type
 
 public:
+	FontContainer* fonts = nullptr;
 
 	StatusBar() : Battery::ImGuiPanel<>("StatusBar", { 0, 0 }, { 400, 0 }, 
-		DEFAULT_IMGUI_PANEL_FLAGS | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoScrollbar) 
+		DEFAULT_IMGUI_PANEL_FLAGS | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_HorizontalScrollbar)
 	{
 	}
 
@@ -26,36 +28,18 @@ public:
 		position = { 0, Battery::GetMainWindow().GetSize().y - STATUS_BAR_HEIGHT };
 	}
 
-	/*void drawChildren(const Endpoint& endpoint) {
-		if (ImGui::TreeNode((endpoint.name + "##" + std::to_string(endpoint.id)).c_str())) {
-
-			for (const Endpoint& ep : endpoint.children) {
-
-				if (ep.type == "function") {	// Function
-					ImGui::Text(ep.name.c_str());
-				}
-				else if (ep.type == "object") {		// It's a node with children
-					drawChildren(ep);
-				}
-				else {			// Numeric types
-					ImGui::Text(ep.name.c_str());
-				}
-			}
-
-			ImGui::TreePop();
-		}
-	}*/
-
 	void OnRender() override {
-		auto* fonts = GetFontContainer<FontContainer>();
+		fonts = GetFontContainer<FontContainer>();
 		ImGui::PushFont(fonts->openSans25);
 
 		float windowWidth = Battery::GetMainWindow().GetSize().x;
 		float windowHeight = Battery::GetMainWindow().GetSize().y;
 
+		//ImGui::SetNextWindowContentSize({ STATUS_BAR_ELEMENTS_WIDTH * 4, -1 });
 		ImGui::Columns(4);
 
 		for (int i = 0; i < MAX_NUMBER_OF_ODRIVES; i++) {
+			ImGui::SetColumnWidth(i, STATUS_BAR_ELEMENTS_WIDTH);
 			auto& odrive = backend->odrives[i];
 			if (odrive) {
 
@@ -68,7 +52,12 @@ public:
 				ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 50);
 				ImGui::SetCursorPosY(8.5);
 
-				ImGui::Text("odrv%d", i);
+				if (backend->odrives[i]->error) {
+					ImGui::TextColored(RED, "odrv%d", i);
+				}
+				else {
+					ImGui::Text("odrv%d", i);
+				}
 				ImGui::SameLine();
 				if (backend->odrives[i]->connected) {
 					ImGui::TextColored(GREEN, "[Connected]");
@@ -83,9 +72,9 @@ public:
 
 		// Handle the odrive info popup
 		bool openEndpointSelector = false;
-		float popupHeight = 400;
-		ImGui::SetNextWindowPos({ windowWidth / 4.f * odriveSelected, windowHeight - STATUS_BAR_HEIGHT - popupHeight });
-		ImGui::SetNextWindowSize({ Battery::GetMainWindow().GetSize().x / 4.f, popupHeight });
+		ImGui::SetNextWindowPos({ (float)STATUS_BAR_ELEMENTS_WIDTH * odriveSelected, windowHeight - STATUS_BAR_HEIGHT - ODRIVE_POPUP_HEIGHT });
+		ImGui::SetNextWindowSize({ STATUS_BAR_ELEMENTS_WIDTH, ODRIVE_POPUP_HEIGHT });
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 12, 12 });
 		if (ImGui::BeginPopupContextWindow("ODriveInfo")) {
 			auto odrive = backend->odrives[std::clamp(odriveSelected, 0, 3)];
 
@@ -98,12 +87,15 @@ public:
 				catch (...) {}
 			}
 
+
 			ImGui::Text("Serial number: 0x%08X", odrive->serialNumber);
 
 			ImGui::Text("Voltage: ");
 			ImGui::SameLine();
 			ImGui::TextColored(GREEN, "%.03f V", vbus_voltage);
 
+			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0, 20 });
+			
 			ImGui::Text("JSON CRC: ");
 			ImGui::SameLine();
 			ImGui::TextColored(LIGHT_BLUE, "0x%02X", odrive->jsonCRC);
@@ -112,13 +104,65 @@ public:
 			//ImGui::SameLine();
 			//ImGui::TextColored(LIGHT_BLUE, "0x%02X", odrive->jsonCRC);
 			if (odrive->connected) {
-				if (ImGui::Button("Endpoint list")) {
+				if (ImGui::Button("Show endpoints", { -1, 40 })) {
 					openEndpointSelector = true;
 				}
+
+				ImGui::PopStyleVar();
+
+				ImGui::Text("Axis error: ");
+				ImGui::SameLine();
+				if (odrive->axisError) {
+					ImGui::TextColored(RED, "0x%04X", odrive->axisError);
+					axisErrorTooltip(odrive);
+				}
+				else {
+					ImGui::TextColored(GREEN, "None");
+				}
+
+				ImGui::Text("Motor error: ");
+				ImGui::SameLine();
+				if (odrive->motorError) {
+					ImGui::TextColored(RED, "0x%04X", odrive->motorError);
+					motorErrorTooltip(odrive);
+				}
+				else {
+					ImGui::TextColored(GREEN, "None");
+				}
+
+				ImGui::Text("Encoder error: ");
+				ImGui::SameLine();
+				if (odrive->encoderError) {
+					ImGui::TextColored(RED, "0x%04X", odrive->encoderError);
+					encoderErrorTooltip(odrive);
+				}
+				else {
+					ImGui::TextColored(GREEN, "None");
+				}
+
+				ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0, 20 });
+
+				ImGui::Text("Controller error: ");
+				ImGui::SameLine();
+				if (odrive->controllerError) {
+					ImGui::TextColored(RED, "0x%04X", odrive->controllerError);
+					controllerErrorTooltip(odrive);
+				}
+				else {
+					ImGui::TextColored(GREEN, "None");
+				}
+
+
+				if (ImGui::Button("Clear errors", { -1, 40 })) {
+					odrive->executeFunction("axis0.clear_errors");
+				}
+
+				ImGui::PopStyleVar();
 			}
 
 			ImGui::EndPopup();
 		}
+		ImGui::PopStyleVar();
 
 		if (openEndpointSelector) {
 			ImGui::OpenPopup("EndpointSelector");
@@ -141,6 +185,90 @@ public:
 		}
 
 		ImGui::PopFont();
+	}
+
+	void axisErrorTooltip(std::shared_ptr<ODrive>& odrive) {
+		if (ImGui::IsItemHovered()) {
+
+			ImGui::BeginTooltip();
+			for (size_t i = 0; i < magic_enum::enum_count<AxisError>(); i++) {
+				auto enumValue = magic_enum::enum_value<AxisError>(i);
+				if (odrive->axisError & (int32_t)enumValue) {
+					auto& enumName = std::string(magic_enum::enum_name(enumValue));
+					auto& enumDesc = AxisErrorDesc[enumName.c_str()];
+
+					ImGui::TextColored(RED, "%s", enumName.c_str());
+					if (enumDesc.length() > 0) {
+						ImGui::SameLine();
+						ImGui::Text(" -> %s", enumDesc.c_str());
+					}
+				}
+			}
+			ImGui::EndTooltip();
+		}
+	}
+
+	void motorErrorTooltip(std::shared_ptr<ODrive>& odrive) {
+		if (ImGui::IsItemHovered()) {
+
+			ImGui::BeginTooltip();
+			for (size_t i = 0; i < magic_enum::enum_count<MotorError>(); i++) {
+				auto enumValue = magic_enum::enum_value<MotorError>(i);
+				if (odrive->motorError & (int32_t)enumValue) {
+					auto& enumName = std::string(magic_enum::enum_name(enumValue));
+					auto& enumDesc = MotorErrorDesc[enumName.c_str()];
+
+					ImGui::TextColored(RED, "%s", enumName.c_str());
+					if (enumDesc.length() > 0) {
+						ImGui::SameLine();
+						ImGui::Text(" -> %s", enumDesc.c_str());
+					}
+				}
+			}
+			ImGui::EndTooltip();
+		}
+	}
+
+	void encoderErrorTooltip(std::shared_ptr<ODrive>& odrive) {
+		if (ImGui::IsItemHovered()) {
+
+			ImGui::BeginTooltip();
+			for (size_t i = 0; i < magic_enum::enum_count<EncoderError>(); i++) {
+				auto enumValue = magic_enum::enum_value<EncoderError>(i);
+				if (odrive->encoderError & (int32_t)enumValue) {
+					auto& enumName = std::string(magic_enum::enum_name(enumValue));
+					auto& enumDesc = EncoderErrorDesc[enumName.c_str()];
+
+					ImGui::TextColored(RED, "%s", enumName.c_str());
+					if (enumDesc.length() > 0) {
+						ImGui::SameLine();
+						ImGui::Text(" -> %s", enumDesc.c_str());
+					}
+				}
+			}
+			ImGui::EndTooltip();
+		}
+	}
+
+	void controllerErrorTooltip(std::shared_ptr<ODrive>& odrive) {
+		if (ImGui::IsItemHovered()) {
+
+			ImGui::BeginTooltip();
+			for (size_t i = 0; i < magic_enum::enum_count<ControllerError>(); i++) {
+				auto enumValue = magic_enum::enum_value<ControllerError>(i);
+				if (odrive->controllerError & (int32_t)enumValue) {
+					auto& enumName = std::string(magic_enum::enum_name(enumValue));
+					auto& enumDesc = ControllerErrorDesc[enumName.c_str()];
+
+					ImGui::TextColored(RED, "%s", enumName.c_str());
+					if (enumDesc.length() > 0) {
+						ImGui::SameLine();
+						ImGui::Text(" -> %s", enumDesc.c_str());
+					}
+				}
+			}
+			ImGui::EndTooltip();
+		}
 	}
 
 	void addEndpoint(std::reference_wrapper<Endpoint> endpoint, int odriveID) {
@@ -188,25 +316,33 @@ public:
 
 			if (ep.type == "float") {
 				ImGui::TextColored(COLOR_FLOAT, "%.03ff", getEndpointValue<float>(ep.identifier));
+				typeTooltip(COLOR_FLOAT, ep.type);
 			}
 			else if (ep.type == "uint8") {
 				ImGui::TextColored(COLOR_UINT, "%d", getEndpointValue<uint8_t>(ep.identifier));
+				typeTooltip(COLOR_UINT, ep.type);
 			}
 			else if (ep.type == "uint16") {
 				ImGui::TextColored(COLOR_UINT, "%d", getEndpointValue<uint16_t>(ep.identifier));
+				typeTooltip(COLOR_UINT, ep.type);
 			}
 			else if (ep.type == "uint32") {
 				ImGui::TextColored(COLOR_UINT, "%d", getEndpointValue<uint32_t>(ep.identifier));
+				typeTooltip(COLOR_UINT, ep.type);
 			}
 			else if (ep.type == "int32") {
 				ImGui::TextColored(COLOR_UINT, "%d", getEndpointValue<int32_t>(ep.identifier));
+				typeTooltip(COLOR_UINT, ep.type);
 			}
 			else if (ep.type == "uint64") {
 				ImGui::TextColored(COLOR_UINT, "%llu", getEndpointValue<uint64_t>(ep.identifier));
+				typeTooltip(COLOR_UINT, ep.type);
 			}
 			else if (ep.type == "bool") {
 				ImGui::TextColored(COLOR_BOOL, getEndpointValue<bool>(ep.identifier) ? "true" : "false");
+				typeTooltip(COLOR_BOOL, ep.type);
 			}
+
 			ImGui::SameLine();
 			ImGui::Text("                ");
 			ImGui::SameLine();
@@ -214,6 +350,16 @@ public:
 			if (ImGui::Button(("+##" + ep.identifier).c_str(), { 40, 0 })) {
 				addEndpoint(ep, odriveSelected);
 			}
+		}
+	}
+
+	void typeTooltip(ImVec4 color, const std::string& type) {
+		if (ImGui::IsItemHovered()) {
+			ImGui::PushFont(fonts->openSans21);
+			ImGui::BeginTooltip();
+			ImGui::TextColored(color, "%s", type.c_str());
+			ImGui::EndTooltip();
+			ImGui::PopFont();
 		}
 	}
 

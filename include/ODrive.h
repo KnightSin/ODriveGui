@@ -23,6 +23,12 @@ public:
 	uint64_t serialNumber = 0;
 	std::vector<Endpoint> endpoints;
 
+	bool error = false;
+	int32_t axisError = 0x00;
+	int32_t motorError = 0x00;
+	int32_t encoderError = 0x00;
+	int32_t controllerError = 0x00;
+
 	ODrive(std::shared_ptr<libusb::device> device, int odriveID) : device(device), odriveID(odriveID) {
 		if (!device) {
 			throw std::runtime_error("ODrive device is nullptr!");
@@ -86,6 +92,15 @@ public:
 		if (endpoint) {
 			sendWriteRequest(endpoint->get().id, 1, { 0 }, jsonCRC);
 		}
+	}
+
+	void updateErrors() {
+		axisError = read<int32_t>("axis0.error");
+		motorError = read<int32_t>("axis0.motor.error");
+		encoderError = read<int32_t>("axis0.encoder.error");
+		controllerError = read<int32_t>("axis0.controller.error");
+
+		error = axisError || motorError || encoderError || controllerError;
 	}
 
 	uint64_t getSerialNumber() {
