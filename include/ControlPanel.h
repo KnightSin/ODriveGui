@@ -5,6 +5,7 @@
 
 #include "config.h"
 #include "Backend.h"
+#include "ODriveDocs.h"
 
 #undef max
 #undef min
@@ -22,9 +23,27 @@
 		ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 200); \
 		ImGui::PushItemWidth(100); \
 		bool set = false; \
-		if (textStatement) { \
-			set = true; \
+		\
+		std::vector<std::string> enumNames = EndpointToEnum(endpoint); \
+		if (enumNames.size() > 0) { \
+			/*if (ImGui::BeginCombo(("##" + path + std::to_string(i)).c_str(), enumNames[0], 0)) { \
+				for (int n = 0; n < enumNames.size(); n++) { \
+					const bool is_selected = (item_current_idx == n); \
+					if (ImGui::Selectable(items[n], is_selected)) \
+						item_current_idx = n; \
+\			
+					if (is_selected) \
+						ImGui::SetItemDefaultFocus(); \
+				} \
+				ImGui::EndCombo(); \
+			} \*/ \
 		} \
+		else { \
+			if (textStatement) { \
+				set = true; \
+			} \
+		} \
+		\
 		ImGui::PopItemWidth(); \
 		ImGui::SameLine(); \
 		if (ImGui::Button(("Set##" + path + std::to_string(i)).c_str(), { 60, 0 })) { \
@@ -75,22 +94,37 @@ public:
 	}
 
 	template<typename T>
-	void drawNumericEndpoint(ImVec4 color, const std::string& path, const char* fmt, const std::string& type) {
+	void drawNumericEndpoint(ImVec4 color, const std::string& path, const char* fmt, Endpoint& ep) {
 		T value = getEndpointValue<T>(backend->values[path]);
 		T oldValue = getEndpointValue<T>(backend->oldValues[path]);
 		ImVec4 col = (value != oldValue) ? (ImVec4(RED)) : (color);
-		ImGui::TextColored(col, fmt, value);
+
+		const std::string& enumName = EndpointToEnum(ep, value);
+		if (enumName.length() > 0) {
+			ImGui::TextColored(col, "%s", enumName.c_str());
+		}
+		else {
+			ImGui::TextColored(col, fmt, value);
+		}
 
 		if (ImGui::IsItemHovered()) {
 			ImGui::BeginTooltip();
-			ImGui::TextColored(color, "%s", type.c_str());
+			ImGui::TextColored(color, "%s", ep.type.c_str());
+
+			if (enumName.length() > 0) {
+				ImGui::SameLine();
+				ImGui::Text("->");
+				ImGui::SameLine();
+				ImGui::TextColored(color, "%s (%d)", enumName.c_str(), value);
+			}
+
 			ImGui::EndTooltip();
 		}
 	}
 
 	void drawNumericEndpoint(const std::string& path, size_t i, Endpoint& endpoint, std::shared_ptr<ODrive>& odrive) {
 		if (endpoint.type == "float") {
-			drawNumericEndpoint<float>(COLOR_FLOAT, path, "%.06ff", endpoint.type);
+			drawNumericEndpoint<float>(COLOR_FLOAT, path, "%.06ff", endpoint);
 			MAKE_IMGUI_TEXT_INPUT(
 				float,
 				floatValues,
@@ -99,7 +133,7 @@ public:
 			);
 		}
 		else if (endpoint.type == "uint8") {
-			drawNumericEndpoint<uint8_t>(COLOR_UINT, path, "%d", endpoint.type);
+			drawNumericEndpoint<uint8_t>(COLOR_UINT, path, "%d", endpoint);
 			MAKE_IMGUI_TEXT_INPUT(
 				uint8_t,
 				uint8Values,
@@ -108,7 +142,7 @@ public:
 			);
 		}
 		else if (endpoint.type == "uint16") {
-			drawNumericEndpoint<uint8_t>(COLOR_UINT, path, "%d", endpoint.type);
+			drawNumericEndpoint<uint8_t>(COLOR_UINT, path, "%d", endpoint);
 			MAKE_IMGUI_TEXT_INPUT(
 				uint16_t,
 				uint16Values,
@@ -117,7 +151,7 @@ public:
 			);
 		}
 		else if (endpoint.type == "uint32") {
-			drawNumericEndpoint<uint32_t>(COLOR_UINT, path, "%d", endpoint.type);
+			drawNumericEndpoint<uint32_t>(COLOR_UINT, path, "%d", endpoint);
 			MAKE_IMGUI_TEXT_INPUT(
 				uint32_t,
 				uint32Values,
@@ -126,7 +160,7 @@ public:
 			);
 		}
 		else if (endpoint.type == "int32") {
-			drawNumericEndpoint<int32_t>(COLOR_UINT, path, "%d", endpoint.type);
+			drawNumericEndpoint<int32_t>(COLOR_UINT, path, "%d", endpoint);
 			MAKE_IMGUI_TEXT_INPUT(
 				int32_t,
 				int32Values,
@@ -135,7 +169,7 @@ public:
 			);
 		}
 		else if (endpoint.type == "uint64") {
-			drawNumericEndpoint<uint64_t>(COLOR_UINT, path, "%d", endpoint.type);
+			drawNumericEndpoint<uint64_t>(COLOR_UINT, path, "%d", endpoint);
 			MAKE_IMGUI_TEXT_INPUT(
 				uint64_t,
 				uint64Values,
@@ -145,7 +179,7 @@ public:
 		}
 		else if (endpoint.type == "bool") {
 			bool v = getEndpointValue<bool>(backend->values[path]);
-			drawNumericEndpoint<bool>(COLOR_BOOL, path, v ? "true" : "false", endpoint.type);
+			drawNumericEndpoint<bool>(COLOR_BOOL, path, v ? "true" : "false", endpoint);
 			if (!endpoint.readonly) {
 				ImGui::SameLine();
 				ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 200);

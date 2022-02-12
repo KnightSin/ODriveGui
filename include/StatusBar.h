@@ -100,9 +100,6 @@ public:
 			ImGui::SameLine();
 			ImGui::TextColored(LIGHT_BLUE, "0x%02X", odrive->jsonCRC);
 
-			//ImGui::Text("JSON CRC: ");
-			//ImGui::SameLine();
-			//ImGui::TextColored(LIGHT_BLUE, "0x%02X", odrive->jsonCRC);
 			if (odrive->connected) {
 				if (ImGui::Button("Show endpoints", { -1, 40 })) {
 					openEndpointSelector = true;
@@ -176,8 +173,10 @@ public:
 		if (ImGui::BeginPopupContextWindow("EndpointSelector")) {
 			auto odrive = backend->odrives[std::clamp(odriveSelected, 0, 3)];
 
+			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0, 15 });
 			ImGui::Text("Endpoints of odrv%d:", odriveSelected);
 			ImGui::Separator();
+			ImGui::PopStyleVar();
 
 			showEndpoints(odriveSelected);
 
@@ -315,32 +314,25 @@ public:
 			ImGui::SameLine();
 
 			if (ep.type == "float") {
-				ImGui::TextColored(COLOR_FLOAT, "%.03ff", getEndpointValue<float>(ep.identifier));
-				typeTooltip(COLOR_FLOAT, ep.type);
+				renderEndpointValue(COLOR_FLOAT, ep, "%.03ff", getEndpointValue<float>(ep.identifier));
 			}
 			else if (ep.type == "uint8") {
-				ImGui::TextColored(COLOR_UINT, "%d", getEndpointValue<uint8_t>(ep.identifier));
-				typeTooltip(COLOR_UINT, ep.type);
+				renderEndpointValue(COLOR_UINT, ep, "%d", getEndpointValue<uint8_t>(ep.identifier));
 			}
 			else if (ep.type == "uint16") {
-				ImGui::TextColored(COLOR_UINT, "%d", getEndpointValue<uint16_t>(ep.identifier));
-				typeTooltip(COLOR_UINT, ep.type);
+				renderEndpointValue(COLOR_UINT, ep, "%d", getEndpointValue<uint16_t>(ep.identifier));
 			}
 			else if (ep.type == "uint32") {
-				ImGui::TextColored(COLOR_UINT, "%d", getEndpointValue<uint32_t>(ep.identifier));
-				typeTooltip(COLOR_UINT, ep.type);
+				renderEndpointValue(COLOR_UINT, ep, "%d", getEndpointValue<uint32_t>(ep.identifier));
 			}
 			else if (ep.type == "int32") {
-				ImGui::TextColored(COLOR_UINT, "%d", getEndpointValue<int32_t>(ep.identifier));
-				typeTooltip(COLOR_UINT, ep.type);
+				renderEndpointValue(COLOR_UINT, ep, "%d", getEndpointValue<int32_t>(ep.identifier));
 			}
 			else if (ep.type == "uint64") {
-				ImGui::TextColored(COLOR_UINT, "%llu", getEndpointValue<uint64_t>(ep.identifier));
-				typeTooltip(COLOR_UINT, ep.type);
+				renderEndpointValue(COLOR_UINT, ep, "%d", getEndpointValue<uint64_t>(ep.identifier));
 			}
 			else if (ep.type == "bool") {
-				ImGui::TextColored(COLOR_BOOL, getEndpointValue<bool>(ep.identifier) ? "true" : "false");
-				typeTooltip(COLOR_BOOL, ep.type);
+				renderEndpointValue(COLOR_BOOL, ep, getEndpointValue<bool>(ep.identifier) ? "true" : "false", 0);
 			}
 
 			ImGui::SameLine();
@@ -353,11 +345,29 @@ public:
 		}
 	}
 
-	void typeTooltip(ImVec4 color, const std::string& type) {
+	template<typename T>
+	void renderEndpointValue(ImVec4 color, Endpoint& ep, const char* fmt, T value) {
+
+		const std::string& enumName = EndpointToEnum(ep, value);
+		if (enumName.length() > 0) {
+			ImGui::TextColored(color, "%s", enumName.c_str());
+		}
+		else {
+			ImGui::TextColored(color, fmt, value);
+		}
+
 		if (ImGui::IsItemHovered()) {
 			ImGui::PushFont(fonts->openSans21);
 			ImGui::BeginTooltip();
-			ImGui::TextColored(color, "%s", type.c_str());
+			ImGui::TextColored(color, "%s", ep.type.c_str());
+
+			if (enumName.length() > 0) {
+				ImGui::SameLine();
+				ImGui::Text("->");
+				ImGui::SameLine();
+				ImGui::TextColored(color, "%s (%d)", enumName.c_str(), value);
+			}
+
 			ImGui::EndTooltip();
 			ImGui::PopFont();
 		}
