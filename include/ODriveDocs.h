@@ -129,6 +129,19 @@ inline static const std::string EndpointToEnum(Endpoint& ep, T value) {
 }
 
 template<typename T>
+inline static size_t EndpointEnumToValue(Endpoint& ep, T value) {
+	
+	if (ep.identifier == "axis0.requested_state") {
+		return (size_t)magic_enum::enum_value<AxisRequestedState>(value);
+	}
+	else if (ep.identifier == "axis1.requested_state") {
+		return (size_t)magic_enum::enum_value<AxisRequestedState>(value);
+	}
+
+	return -1;
+}
+
+template<typename T>
 static std::vector<std::string> makeEnumVector() {
 	std::vector<std::string> names;
 	for (size_t i = 0; i < magic_enum::enum_count<T>(); i++) {
