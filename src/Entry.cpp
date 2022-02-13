@@ -46,10 +46,12 @@ void Entry::updateValue() {
 }
 
 bool Entry::drawImGuiNumberInputField(const std::string& imguiIdentifier, bool isfloat) {
-	if (isfloat)
-		return ImGui::InputText(imguiIdentifier.c_str(), imguiBuffer, IMGUI_BUFFER_SIZE, IMGUI_FLAGS_FLOAT);
+	ImGuiInputTextFlags flags = IMGUI_FLAGS_INT;
 
-	return ImGui::InputText(imguiIdentifier.c_str(), imguiBuffer, IMGUI_BUFFER_SIZE, IMGUI_FLAGS_INT);
+	if (isfloat)
+		flags = IMGUI_FLAGS_FLOAT;
+
+	return ImGui::InputText(imguiIdentifier.c_str(), imguiBuffer, IMGUI_BUFFER_SIZE, flags);
 }
 
 void Entry::drawImGuiDropdownField(const std::string& imguiIdentifier, const std::vector<std::string>& enumNames) {
@@ -86,6 +88,7 @@ void Entry::drawImGuiNumberInput(Endpoint& ep, bool isfloat) {
 		ImGui::PushItemWidth(100);
 		if (drawImGuiNumberInputField("##" + ep->fullPath + std::to_string(entryID), isfloat)) {
 			set = true;
+			ImGui::SetKeyboardFocusHere(-1);
 		}
 		writeValue.fromString(imguiBuffer);
 	}
