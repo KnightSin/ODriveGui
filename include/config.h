@@ -19,5 +19,10 @@
 #define COLOR_UINT		LIGHT_GREEN
 #define COLOR_FUNCTION	YELLOW
 
-#define IMGUI_COLOR(r, g, b, a) { r / 255.f, g / 255.f, b / 255.f, a / 155.f }
+#define IMGUI_COLOR(r, g, b, a) ImVec4({ r / 255.f, g / 255.f, b / 255.f, a / 155.f })
 #define IMGUI_BUFFER_SIZE 16
+
+// Flags for the Text input fields
+#define IMGUI_FLAGS_FLOAT ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CharsScientific
+#define IMGUI_FLAGS_INT ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CharsDecimal
+

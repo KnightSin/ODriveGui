@@ -1,5 +1,8 @@
 #pragma once
 
+#include "pch.h"
+#include "config.h"
+
 #include <string>
 #include <vector>
 #include <optional>
@@ -50,6 +53,23 @@ struct Endpoint {
 
 	BasicEndpoint* operator->() {
 		return &basic;
+	}
+
+	ImVec4 getColor() {
+		if (basic.type == "float") {
+			return COLOR_FLOAT;
+		}
+		if (basic.type == "bool") {
+			return COLOR_BOOL;
+		}
+		return COLOR_UINT;
+	}
+
+	ImGuiInputTextFlags getImGuiFlags() {
+		if (basic.type == "float") {
+			return IMGUI_FLAGS_FLOAT;
+		}
+		return IMGUI_FLAGS_INT;
 	}
 };
 

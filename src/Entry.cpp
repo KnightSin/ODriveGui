@@ -4,9 +4,32 @@
 #include "Backend.h"
 #include "config.h"
 #include "ODriveDocs.h"
+#include "config.h"
 
-#define IMGUI_FLAGS_FLOAT ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CharsScientific
-#define IMGUI_FLAGS_INT ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CharsDecimal
+static void drawEndpointChildWindow(const std::string& path, const std::string& type, const std::string& value, ImVec4 color, const std::string& enumName, int64_t enumValue, bool changed) {
+	ImVec4 col = changed ? RED : color;
+
+	ImGui::Text("%s   =", path.c_str());
+	ImGui::SameLine();
+	ImGui::TextColored(col, "%s", value.c_str());
+
+	// And the tooltip
+	if (ImGui::IsItemHovered()) {
+		ImGui::BeginTooltip();
+		ImGui::TextColored(color, "%s", type.c_str());
+
+		if (enumName.length() > 0) {
+			ImGui::SameLine();
+			ImGui::Text("->");
+			ImGui::SameLine();
+			std::stringstream name;
+			name << enumName << " (0x" << std::uppercase << std::hex << enumValue << ")";
+			ImGui::TextColored(col, "%s", name.str().c_str(), value);
+		}
+
+		ImGui::EndTooltip();
+	}
+}
 
 Entry::Entry(const Endpoint& ep) : endpoint(ep), value(ep.basic.type) {
 	entryID = entryIDCounter;
@@ -19,10 +42,10 @@ void Entry::updateValue() {
 	// Update the changed flags
 	oldValues[endpoint->fullPath] = value;
 	for (Endpoint& e : endpoint.inputs) {
-		oldValues[e->fullPath] = value;
+		oldValues[e->fullPath] = ioValues[e->fullPath];
 	}
 	for (Endpoint& e : endpoint.outputs) {
-		oldValues[e->fullPath] = value;
+		oldValues[e->fullPath] = ioValues[e->fullPath];
 	}
 
 	// And now read
@@ -45,12 +68,7 @@ void Entry::updateValue() {
 	}
 }
 
-bool Entry::drawImGuiNumberInputField(const std::string& imguiIdentifier, bool isfloat) {
-	ImGuiInputTextFlags flags = IMGUI_FLAGS_INT;
-
-	if (isfloat)
-		flags = IMGUI_FLAGS_FLOAT;
-
+bool Entry::drawImGuiNumberInputField(const std::string& imguiIdentifier, ImGuiInputTextFlags flags) {
 	return ImGui::InputText(imguiIdentifier.c_str(), imguiBuffer, IMGUI_BUFFER_SIZE, flags);
 }
 
@@ -75,7 +93,7 @@ void Entry::drawImGuiNumberInput(Endpoint& ep, bool isfloat) {
 	ImGui::SameLine();
 	bool set = false;
 
-	EndpointValue writeValue(this->value.type());
+	EndpointValue writeValue(ep->type);
 	std::vector<std::string> enumNames = ListEnumValues(ep.basic);
 	if (enumNames.size() > 0) {
 		ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 300);
@@ -86,7 +104,7 @@ void Entry::drawImGuiNumberInput(Endpoint& ep, bool isfloat) {
 	else {
 		ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 200);
 		ImGui::PushItemWidth(100);
-		if (drawImGuiNumberInputField("##" + ep->fullPath + std::to_string(entryID), isfloat)) {
+		if (drawImGuiNumberInputField("##" + ep->fullPath + std::to_string(entryID), ep.getImGuiFlags())) {
 			set = true;
 			ImGui::SetKeyboardFocusHere(-1);
 		}
@@ -102,9 +120,14 @@ void Entry::drawImGuiNumberInput(Endpoint& ep, bool isfloat) {
 	bool load = false;
 	if (set) {
 		try {
-			backend->writeEndpointDirect(ep.basic, writeValue);
-			backend->updateEntryCache();
-			LOG_DEBUG("Setting {} to {}", ep->fullPath, writeValue.toString());
+			if (writeValue.toString().length() > 0) {
+				backend->writeEndpointDirect(ep.basic, writeValue);
+				backend->updateEntryCache();
+				LOG_DEBUG("Setting {} to {}", ep->fullPath, writeValue.toString());
+			}
+			else {
+				LOG_ERROR("Error setting {}: Value to write is invalid!", ep->fullPath);
+			}
 		}
 		catch (...) {
 			load = true;
@@ -144,49 +167,6 @@ void Entry::drawEndpointInput(Endpoint& ep) {
 	}
 }
 
-void Entry::drawNumericEndpointValue(EndpointValue& value, Endpoint& ep, bool input, bool output) {
-
-	bool changed = (value != oldValues[ep->fullPath]);
-	std::string text = value.toString();
-
-	ImVec4 rawColor = COLOR_UINT;
-	if (ep->type == "float") {
-		rawColor = COLOR_FLOAT;
-	}
-	if (ep->type == "bool") {
-		rawColor = COLOR_BOOL;
-	}
-	ImVec4 color = rawColor;
-	if (changed) {
-		color = RED;
-	}
-
-	// Test to see if an enum name is available for this endpoint
-	const std::string& enumName = EndpointValueToEnumName(ep.basic, value.get<int64_t>());
-	if (enumName.length() > 0) {
-		text = enumName;
-	}
-
-	ImGui::TextColored(color, "%s", text.c_str());
-
-	// And the tooltip
-	if (ImGui::IsItemHovered()) {
-		ImGui::BeginTooltip();
-		ImGui::TextColored(rawColor, "%s", ep->type.c_str());
-
-		if (enumName.length() > 0) {
-			ImGui::SameLine();
-			ImGui::Text("->");
-			ImGui::SameLine();
-			std::stringstream name;
-			name << enumName << " (0x" << std::hex << value.get<int64_t>() << ")";
-			ImGui::TextColored(color, "%s", name.str().c_str(), value);
-		}
-
-		ImGui::EndTooltip();
-	}
-}
-
 void Entry::draw() {
 
 	ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10);
@@ -197,10 +177,10 @@ void Entry::draw() {
 			toBeRemoved = true;
 		}
 		ImGui::SameLine();
-		ImGui::Text("%s   =", endpoint->fullPath.c_str());
-		ImGui::SameLine();
 
-		drawNumericEndpointValue(value, endpoint, false, false);
+		bool changed = (value != oldValues[endpoint->fullPath]);	// vvv Test if an enum name is available for this endpoint
+		const std::string& enumName = EndpointValueToEnumName(endpoint.basic, value.get<int64_t>());
+		drawEndpointChildWindow(endpoint->fullPath.c_str(), endpoint->type.c_str(), value.toString(), endpoint.getColor(), enumName, value.get<int64_t>(), changed);
 		if (!endpoint->readonly) {
 			drawEndpointInput(endpoint);
 		}
@@ -216,7 +196,7 @@ void Entry::draw() {
 		ImGui::SameLine();
 		ImGui::Text("%s()", endpoint->fullPath.c_str());
 		ImGui::SameLine();
-		ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 100);
+		ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 120);
 		if (ImGui::Button(("Execute##" + endpoint->fullPath).c_str(), { 90, 0 })) {
 			backend->executeFunction(endpoint->odriveID, endpoint->identifier);
 		}
@@ -230,13 +210,16 @@ void Entry::draw() {
 		}
 		for (size_t j = 0; j < endpoint.inputs.size(); j++) {
 			Endpoint& ep = endpoint.inputs[j];
+			auto& value = ioValues[ep->fullPath];
+
 			ImGui::SetCursorPosX(120);
-			ImGui::Text("%s   =", ep->identifier.c_str());
-			ImGui::SameLine();
-			drawNumericEndpointValue(ioValues[ep->fullPath], ep, true, false);
+
+			bool changed = (value != oldValues[ep->fullPath]);
+			drawEndpointChildWindow(ep->identifier.c_str(), ep->type.c_str(), value.toString(), ep.getColor(), "", 0, changed);
 			if (!ep->readonly) {
 				drawEndpointInput(ep);
 			}
+
 			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10);
 		}
 
@@ -247,13 +230,16 @@ void Entry::draw() {
 		}
 		for (size_t j = 0; j < endpoint.outputs.size(); j++) {
 			Endpoint& ep = endpoint.outputs[j];
+			auto& value = ioValues[ep->fullPath];
+
 			ImGui::SetCursorPosX(120);
-			ImGui::Text("%s   =", ep->identifier.c_str());
-			ImGui::SameLine();
-			drawNumericEndpointValue(ioValues[ep->fullPath], ep, false, true);
+
+			bool changed = (value != oldValues[ep->fullPath]);
+			drawEndpointChildWindow(ep->identifier.c_str(), ep->type.c_str(), value.toString(), ep.getColor(), "", 0, changed);
 			if (!ep->readonly) {
 				drawEndpointInput(ep);
 			}
+
 			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10);
 		}
 	}

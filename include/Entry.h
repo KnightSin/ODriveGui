@@ -21,11 +21,10 @@ public:
 
 	void updateValue();
 
-	bool drawImGuiNumberInputField(const std::string& imguiIdentifier, bool isfloat);
+	bool drawImGuiNumberInputField(const std::string& imguiIdentifier, ImGuiInputTextFlags flags);
 	void drawImGuiDropdownField(const std::string& imguiIdentifier, const std::vector<std::string>& enumNames);
 	void drawImGuiNumberInput(Endpoint& ep, bool isfloat);
 	void drawImGuiBoolInput(Endpoint& ep);
 	void drawEndpointInput(Endpoint& ep);
-	void drawNumericEndpointValue(EndpointValue& value, Endpoint& ep, bool input, bool output);
 	void draw();
 };
