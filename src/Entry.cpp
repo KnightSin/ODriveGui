@@ -172,7 +172,7 @@ void Entry::drawNumericEndpointValue(EndpointValue& value, Endpoint& ep, bool in
 	// And the tooltip
 	if (ImGui::IsItemHovered()) {
 		ImGui::BeginTooltip();
-		ImGui::TextColored(color, "%s", ep->type.c_str());
+		ImGui::TextColored(rawColor, "%s", ep->type.c_str());
 
 		if (enumName.length() > 0) {
 			ImGui::SameLine();
@@ -180,7 +180,7 @@ void Entry::drawNumericEndpointValue(EndpointValue& value, Endpoint& ep, bool in
 			ImGui::SameLine();
 			std::stringstream name;
 			name << enumName << " (0x" << std::hex << value.get<int64_t>() << ")";
-			ImGui::TextColored(rawColor, "%s", name.str().c_str(), value);
+			ImGui::TextColored(color, "%s", name.str().c_str(), value);
 		}
 
 		ImGui::EndTooltip();
