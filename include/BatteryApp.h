@@ -7,6 +7,8 @@
 class BatteryApp : public Battery::Application {
 
 	std::shared_ptr<UserInterface> ui;
+	std::thread backendUpdateThread;
+	std::atomic<bool> shouldClose = false;
 
 public:
 	BatteryApp();

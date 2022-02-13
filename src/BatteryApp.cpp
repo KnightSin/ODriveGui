@@ -4,6 +4,8 @@
 #include "Battery/AllegroDeps.h"
 #include "Backend.h"
 
+#define UPDATE_CACHE_FREQUENCY 5.f
+
 BatteryApp::BatteryApp() : Battery::Application(1280, 720, "ODriveGui") {
 	LOG_SET_LOGLEVEL(BATTERY_LOG_LEVEL_DEBUG);
 }
@@ -16,13 +18,21 @@ bool BatteryApp::OnStartup() {
 	ui = std::make_shared<UserInterface>();
 	PushOverlay(ui);
 
+	backendUpdateThread = std::thread([&] { 
+		while (!shouldClose) { 
+			backend->updateEntryCache();
+			Battery::Sleep(1.f / UPDATE_CACHE_FREQUENCY);
+		} 
+	});
+
 	return true;
 }
 
 void BatteryApp::OnUpdate() {
-	if (framecount % 40 == 1) {
+	static float s = 0;
+	if (framecount % 30 == 1) {
+		s = Battery::GetRuntime();
 		backend->scanDevices();
-		backend->updateEntryCache();
 
 		// Request all errors as a health check of the connection
 		for (int i = 0; i < MAX_NUMBER_OF_ODRIVES; i++) {
@@ -41,6 +51,8 @@ void BatteryApp::OnRender() {
 }
 
 void BatteryApp::OnShutdown() {
+	shouldClose = true;
+	backendUpdateThread.join();
 	backend.reset();
 }
 

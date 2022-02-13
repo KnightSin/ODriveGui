@@ -43,6 +43,7 @@ public:
 		if (!loaded || !connected)
 			throw std::runtime_error("ODrive not yet loaded or not connected anymore");
 
+		std::lock_guard<std::mutex> lock(transferMutex);
 		uint16_t sequence = sendReadRequest(endpoint, sizeof(T), {}, jsonCRC);
 
 		double start = Battery::GetRuntime();
@@ -75,6 +76,7 @@ public:
 		std::vector<uint8_t> payload(sizeof(T), 0);
 		memcpy(&payload[0], &value, sizeof(T));
 
+		std::lock_guard<std::mutex> lock(transferMutex);
 		sendWriteRequest(endpoint, sizeof(T), payload, jsonCRC);
 
 		return true;
@@ -92,6 +94,7 @@ public:
 	void executeFunction(const std::string& identifier) {
 		auto endpoint = findEndpoint(identifier);
 		if (endpoint) {
+			std::lock_guard<std::mutex> lock(transferMutex);
 			sendWriteRequest(endpoint->id, 1, { 0 }, jsonCRC);
 		}
 	}
@@ -110,99 +113,6 @@ public:
 		return serialNumber;
 	}
 
-	uint16_t sendReadRequest(uint16_t endpointID, uint16_t expectedResponseSize, const buffer_t& payload, uint16_t jsonCRC) {
-		return sendRequest((1 << 15) | endpointID, expectedResponseSize, payload, jsonCRC);
-	}
-
-	uint16_t sendWriteRequest(uint16_t endpointID, uint16_t expectedResponseSize, const buffer_t& payload, uint16_t jsonCRC) {
-		return sendRequest(endpointID, expectedResponseSize, payload, jsonCRC);
-	}
-
-	uint16_t sendRequest(uint16_t endpointID, uint16_t expectedResponseSize, const buffer_t& payload, uint16_t jsonCRC) {
-		sequenceNumber = (sequenceNumber + 1) % 4096;
-		sendRequest(sequenceNumber, endpointID, expectedResponseSize, payload, jsonCRC);
-		return sequenceNumber;
-	}
-
-	void sendRequest(uint16_t sequenceNumber, uint16_t endpointID, uint16_t expectedResponseSize, const buffer_t& payload, uint16_t jsonCRC) {
-		buffer_t buffer;
-		buffer.reserve(payload.size() + 8);
-
-		buffer.push_back((uint8_t)(sequenceNumber));
-		buffer.push_back((uint8_t)(sequenceNumber >> 8));
-
-		buffer.push_back((uint8_t)(endpointID));
-		buffer.push_back((uint8_t)(endpointID >> 8));
-
-		buffer.push_back((uint8_t)(expectedResponseSize));
-		buffer.push_back((uint8_t)(expectedResponseSize >> 8));
-
-		for (uint8_t b : payload) {
-			buffer.push_back(b);
-		}
-
-		buffer.push_back((uint8_t)(jsonCRC));
-		buffer.push_back((uint8_t)(jsonCRC >> 8));
-
-		write(&buffer[0], buffer.size());
-	}
-
-	void write(uint8_t* data, size_t length) {
-		for (int i = 0; i < 5; i++) {
-			//LOG_DEBUG("Call to libusb::bulkWrite");
-			if (device->bulkWrite(data, length) != -1) {
-				return;
-			}
-		}
-		disconnect();
-	}
-
-	std::vector<uint8_t> read(size_t expectedLength) {
-		auto data = device->bulkRead(expectedLength + 2);
-		if (data.size() == 0) {
-			disconnect();
-		}
-		return std::move(data);
-	}
-
-	std::pair<uint16_t, buffer_t> getResponse(size_t expectedLength) {
-		buffer_t response = read(expectedLength);
-
-		if (response.size() < 2) {
-			return std::make_pair(0, buffer_t());
-		}
-
-		uint16_t sequence = response[0] | response[1] << 8;
-
-		buffer_t buffer;
-		for (size_t i = 2; i < response.size(); i++) {
-			buffer.push_back(response[i]);
-		}
-		return std::make_pair(sequence, buffer);
-	}
-
-	std::string getJSON() {
-		std::string json;
-
-		uint32_t offset = 0;
-		while (true) {
-			buffer_t buffer(sizeof(offset), 0);
-			memcpy(&buffer[0], &offset, sizeof(offset));
-
-			sendReadRequest(0, 32, buffer, 1);
-			auto response = getResponse(32);
-			offset += (uint32_t)response.second.size();
-
-			if (response.second.size() == 0) {
-				break;
-			}
-
-			json += std::string((char*)&response.second[0], response.second.size());
-		}
-		
-		return json;
-	}
-
 	void disconnect() {
 		if (connected) {
 			device->close();
@@ -211,6 +121,8 @@ public:
 	}
 
 	void load(int odriveID) {
+
+		std::lock_guard<std::mutex> lock(transferMutex);
 		connected = true;
 		json = getJSON();
 		jsonCRC = CRC16_JSON((uint8_t*)&json[0], json.length());
@@ -306,6 +218,100 @@ private:
 		return nullptr;
 	}
 
+	uint16_t sendReadRequest(uint16_t endpointID, uint16_t expectedResponseSize, const buffer_t& payload, uint16_t jsonCRC) {
+		return sendRequest((1 << 15) | endpointID, expectedResponseSize, payload, jsonCRC);
+	}
+
+	uint16_t sendWriteRequest(uint16_t endpointID, uint16_t expectedResponseSize, const buffer_t& payload, uint16_t jsonCRC) {
+		return sendRequest(endpointID, expectedResponseSize, payload, jsonCRC);
+	}
+
+	uint16_t sendRequest(uint16_t endpointID, uint16_t expectedResponseSize, const buffer_t& payload, uint16_t jsonCRC) {
+		sequenceNumber = (sequenceNumber + 1) % 4096;
+		sendRequest(sequenceNumber, endpointID, expectedResponseSize, payload, jsonCRC);
+		return sequenceNumber;
+	}
+
+	void sendRequest(uint16_t sequenceNumber, uint16_t endpointID, uint16_t expectedResponseSize, const buffer_t& payload, uint16_t jsonCRC) {
+		buffer_t buffer;
+		buffer.reserve(payload.size() + 8);
+
+		buffer.push_back((uint8_t)(sequenceNumber));
+		buffer.push_back((uint8_t)(sequenceNumber >> 8));
+
+		buffer.push_back((uint8_t)(endpointID));
+		buffer.push_back((uint8_t)(endpointID >> 8));
+
+		buffer.push_back((uint8_t)(expectedResponseSize));
+		buffer.push_back((uint8_t)(expectedResponseSize >> 8));
+
+		for (uint8_t b : payload) {
+			buffer.push_back(b);
+		}
+
+		buffer.push_back((uint8_t)(jsonCRC));
+		buffer.push_back((uint8_t)(jsonCRC >> 8));
+
+		write(&buffer[0], buffer.size());
+	}
+
+	void write(uint8_t* data, size_t length) {
+		for (int i = 0; i < 5; i++) {
+			//LOG_DEBUG("Call to libusb::bulkWrite");
+			if (device->bulkWrite(data, length) != -1) {
+				return;
+			}
+		}
+		disconnect();
+	}
+
+	std::vector<uint8_t> read(size_t expectedLength) {
+		auto data = device->bulkRead(expectedLength + 2);
+		if (data.size() == 0) {
+			disconnect();
+		}
+		return std::move(data);
+	}
+
+	std::pair<uint16_t, buffer_t> getResponse(size_t expectedLength) {
+		buffer_t response = read(expectedLength);
+
+		if (response.size() < 2) {
+			return std::make_pair(0, buffer_t());
+		}
+
+		uint16_t sequence = response[0] | response[1] << 8;
+
+		buffer_t buffer;
+		for (size_t i = 2; i < response.size(); i++) {
+			buffer.push_back(response[i]);
+		}
+		return std::make_pair(sequence, buffer);
+	}
+
+	std::string getJSON() {
+		std::string json;
+
+		uint32_t offset = 0;
+		while (true) {
+			buffer_t buffer(sizeof(offset), 0);
+			memcpy(&buffer[0], &offset, sizeof(offset));
+
+			sendReadRequest(0, 32, buffer, 1);
+			auto response = getResponse(32);
+			offset += (uint32_t)response.second.size();
+
+			if (response.second.size() == 0) {
+				break;
+			}
+
+			json += std::string((char*)&response.second[0], response.second.size());
+		}
+
+		return json;
+	}
+
 	std::shared_ptr<libusb::device> device;
 	inline static uint16_t sequenceNumber = 0;
+	std::mutex transferMutex;
 };

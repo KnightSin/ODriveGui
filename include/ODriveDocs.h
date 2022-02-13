@@ -96,7 +96,7 @@ BETTER_ENUM(ControllerError, int32_t,
 );
 
 static std::map<std::string, std::string> ControllerErrorDesc = {
-	{ "CONTROLLER_ERROR_INVALID_INPUT_MODE", "axis.requested_state might have been invalid" }
+	{ "", "" }
 };
 
 
