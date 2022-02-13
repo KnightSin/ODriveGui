@@ -149,13 +149,14 @@ void Entry::drawNumericEndpointValue(EndpointValue& value, Endpoint& ep, bool in
 	bool changed = (value != oldValues[ep->fullPath]);
 	std::string text = value.toString();
 
-	ImVec4 color = COLOR_UINT;
+	ImVec4 rawColor = COLOR_UINT;
 	if (ep->type == "float") {
-		color = COLOR_FLOAT;
+		rawColor = COLOR_FLOAT;
 	}
 	if (ep->type == "bool") {
-		color = COLOR_BOOL;
+		rawColor = COLOR_BOOL;
 	}
+	ImVec4 color = rawColor;
 	if (changed) {
 		color = RED;
 	}
@@ -179,7 +180,7 @@ void Entry::drawNumericEndpointValue(EndpointValue& value, Endpoint& ep, bool in
 			ImGui::SameLine();
 			std::stringstream name;
 			name << enumName << " (0x" << std::hex << value.get<int64_t>() << ")";
-			ImGui::TextColored(color, "%s", name.str().c_str(), value);
+			ImGui::TextColored(rawColor, "%s", name.str().c_str(), value);
 		}
 
 		ImGui::EndTooltip();

@@ -49,8 +49,10 @@ public:
                 return odrives[ep.odriveID]->read<T>(ep.identifier);
             }
             catch (...) {
-                odrives[ep.odriveID]->disconnect();
-                odriveDisconnected(ep.odriveID);
+                if (odrives[ep.odriveID]->connected) {
+                    odrives[ep.odriveID]->disconnect();
+                    odriveDisconnected(ep.odriveID);
+                }
             }
         }
         return std::nullopt;
@@ -66,8 +68,10 @@ public:
             LOG_DEBUG("Writing {} to endpoint {}", value, ep.fullPath);
         }
         catch (...) {
-            odrives[ep.odriveID]->disconnect();
-            odriveDisconnected(ep.odriveID);
+            if (odrives[ep.odriveID]->connected) {
+                odrives[ep.odriveID]->disconnect();
+                odriveDisconnected(ep.odriveID);
+            }
         }
     }
 
