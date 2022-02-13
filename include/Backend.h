@@ -3,22 +3,24 @@
 #include "ODrive.h"
 #include "libusbcpp.h"
 
+#include "Entry.h"
+
 #define MAX_NUMBER_OF_ODRIVES 4
 #define REF std::reference_wrapper
 
 class Backend;
 extern std::unique_ptr<Backend> backend;    // Accessible globally, allocated and deleted by BatteryApp
 
-template<typename T>
-void backendReadEndpoint(std::shared_ptr<ODrive>& odrive, const std::string& path, const std::string& identifier) {
-    T value = odrive->read<T>(identifier);
-    uint64_t rawValue;
-    memcpy(&rawValue, &value, sizeof(value));
-    backend->values[path] = rawValue;
-}
-
 class Backend {
 public:
+
+    libusb::context context;
+    libusb::HotplugListener hotplugListener;
+    std::array<std::shared_ptr<ODrive>, MAX_NUMBER_OF_ODRIVES> odrives;
+
+    std::vector<Entry> entries;   // Every entry is one line in the control panel
+    std::map<std::string, EndpointValue> cachedEndpointValues;   // For endpoint selector, always only one odrive
+
     Backend();
     ~Backend();
 
@@ -26,31 +28,47 @@ public:
     void deviceConnected(std::shared_ptr<libusb::device> device);
     void connectDevice(std::shared_ptr<libusb::device> device);
 
-    void addEndpoint(std::reference_wrapper<Endpoint> info, int odriveID);
-    void removeEndpoint(size_t index);
-    void readEndpoint(const std::string& type, std::shared_ptr<ODrive>& odrive, const std::string& path, const std::string& identifier);
-    void updateEndpoints();
+    void addEntry(const Entry& entry);
+    void removeEntry(const std::string& fullPath);
+    void updateEntryCache();
+
+    void executeFunction(int odriveID, const std::string& identifier);
+    void odriveDisconnected(int odriveID);
+
+    void updateEndpointCache(int odriveID);
+    EndpointValue getCachedEndpointValue(const std::string& fullPath);
+
+
+    EndpointValue readEndpointDirect(const BasicEndpoint& ep);
+    void writeEndpointDirect(const BasicEndpoint& ep, const EndpointValue& value);
 
     template<typename T>
-    void setValue(const std::string& path, T value) {
-        std::string identifier = path.substr(6);
-
-        uint8_t index = path[4] - '0';		// Get ODrive index
-        if (index >= MAX_NUMBER_OF_ODRIVES)
-            return;
-
-        LOG_DEBUG("Setting {} to {}", path, value);
-
-        odrives[index]->write<T>(identifier, value);
+    std::optional<T> readEndpointDirectRaw(const BasicEndpoint& ep) {
+        if (odrives[ep.odriveID]) {
+            try {
+                return odrives[ep.odriveID]->read<T>(ep.identifier);
+            }
+            catch (...) {
+                odrives[ep.odriveID]->disconnect();
+                odriveDisconnected(ep.odriveID);
+            }
+        }
+        return std::nullopt;
     }
 
-    void executeFunction(const std::string& path);
+    template<typename T>
+    void writeEndpointDirectRaw(const BasicEndpoint& ep, T value) {
+        if (!odrives[ep.odriveID])
+            return;
 
-    libusb::context context;
-    libusb::HotplugListener hotplugListener;
-    std::array<std::shared_ptr<ODrive>, MAX_NUMBER_OF_ODRIVES> odrives;
+        try {
+            odrives[ep.odriveID]->write<T>(ep.identifier, value);
+            LOG_DEBUG("Writing {} to endpoint {}", value, ep.fullPath);
+        }
+        catch (...) {
+            odrives[ep.odriveID]->disconnect();
+            odriveDisconnected(ep.odriveID);
+        }
+    }
 
-    std::vector<std::pair<int, Endpoint>> endpoints;
-    std::map<std::string, uint64_t> values;
-    std::map<std::string, uint64_t> oldValues;
 };

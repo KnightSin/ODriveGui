@@ -2,6 +2,8 @@
 #include "pch.h"
 #include "Backend.h"
 
+#include "Endpoint.h"
+
 std::unique_ptr<Backend> backend;
 
 Backend::Backend() : hotplugListener(context) {
@@ -27,7 +29,7 @@ void Backend::connectDevice(std::shared_ptr<libusb::device> device) {
 	LOG_DEBUG("New device connected, probing...");
 	std::shared_ptr<ODrive> odrive = std::make_shared<ODrive>(device, -1);
 	device->claimInterface(ODRIVE_USB_INTERFACE);
-	odrive->load();
+	odrive->load(999);
 	uint64_t serialNumber = odrive->getSerialNumber();
 
 	// Check if a device with the same serial number is already known
@@ -67,80 +69,88 @@ void Backend::connectDevice(std::shared_ptr<libusb::device> device) {
 	LOG_INFO("Device with serial number 0x{:08X} connected as odrv{}: {}", serialNumber, index, device->getInfo().description);
 }
 
-void Backend::addEndpoint(std::reference_wrapper<Endpoint> info, int odriveID) {
-	endpoints.push_back(std::make_pair(odriveID, info));
+void Backend::addEntry(const Entry& entry) {
+	LOG_INFO("Adding endpoint entry {}", entry.endpoint.basic.fullPath);
+	entries.push_back(entry);
 }
 
-void Backend::removeEndpoint(size_t index) {
-	LOG_INFO("Removing endpoint entry #{}", index);
-	endpoints.erase(endpoints.begin() + index);
-}
-
-void Backend::readEndpoint(const std::string& type, std::shared_ptr<ODrive>& odrive, const std::string& path, const std::string& identifier) {
-	if (type == "float") {
-		backendReadEndpoint<float>(odrive, path, identifier);
-	}
-	else if (type == "bool") {
-		backendReadEndpoint<bool>(odrive, path, identifier);
-	}
-	else if (type == "uint8") {
-		backendReadEndpoint<uint8_t>(odrive, path, identifier);
-	}
-	else if (type == "uint16") {
-		backendReadEndpoint<uint16_t>(odrive, path, identifier);
-	}
-	else if (type == "uint32") {
-		backendReadEndpoint<uint32_t>(odrive, path, identifier);
-	}
-	else if (type == "int32") {
-		backendReadEndpoint<int32_t>(odrive, path, identifier);
-	}
-	else if (type == "uint64") {
-		backendReadEndpoint<uint64_t>(odrive, path, identifier);
+void Backend::removeEntry(const std::string& fullPath) {
+	LOG_INFO("Removing endpoint entry {}", fullPath);
+	for (size_t i = 0; i < entries.size(); i++) {
+		if (entries[i].endpoint->fullPath == fullPath) {
+			entries.erase(entries.begin() + i);
+			return;
+		}
 	}
 }
 
-void Backend::updateEndpoints() {
+void Backend::updateEntryCache() {
 
-	oldValues = std::move(values);
-	values.clear();
+	for (Entry& e : entries) {
+		e.updateValue();
+	}
+}
 
-	try {
-		for (size_t i = 0; i < endpoints.size(); i++) {
-			std::string identifier = backend->endpoints[i].second.identifier;
-			std::string path = "odrv" + std::to_string(backend->endpoints[i].first) + "." + identifier;
-			std::string type = endpoints[i].second.type;
+void Backend::executeFunction(int odriveID, const std::string& identifier) {
 
-			auto& odrive = odrives[endpoints[i].first];
+	if (!odrives[odriveID])
+		return;
 
-			// Read the endpoint and write into 'values[]'
-			readEndpoint(type, odrive, path, identifier);
+	odrives[odriveID]->executeFunction(identifier);
+}
 
-			if (type == "function") {
-				Endpoint& endpoint = backend->endpoints[i].second;
-				for (Endpoint& ep : endpoint.inputs) {
-					std::string _path = "odrv" + std::to_string(backend->endpoints[i].first) + "." + ep.identifier;
-					readEndpoint(ep.type, odrive, _path, ep.identifier);
-				}
-				for (Endpoint& ep : endpoint.outputs) {
-					std::string _path = "odrv" + std::to_string(backend->endpoints[i].first) + "." + ep.identifier;
-					readEndpoint(ep.type, odrive, _path, ep.identifier);
-				}
+void Backend::odriveDisconnected(int odriveID) {
+	LOG_ERROR("Lost connection to odrv{}", odriveID);
+}
+
+void Backend::updateEndpointCache(int odriveID) {
+
+	if (!odrives[odriveID])
+		return;
+
+	// Loop through every endpoint of the odrive
+	cachedEndpointValues.clear();
+	for (BasicEndpoint& ep : odrives[odriveID]->cachedEndpoints) {
+		if (ep.type != "function") {	// It's a numeric type, objects are not in the cached list	
+			EndpointValue& value = readEndpointDirect(ep);
+			if (value.type() != EndpointValueType::INVALID) {
+				cachedEndpointValues.emplace(ep.fullPath, value);
 			}
 		}
 	}
-	catch (...) {
-		values = oldValues;		// Restore
-	}
 }
 
-void Backend::executeFunction(const std::string& path) {
-	std::string identifier = path.substr(6);
+EndpointValue Backend::getCachedEndpointValue(const std::string& fullPath) {
+	
+	auto it = cachedEndpointValues.find(fullPath);
+	if (it != cachedEndpointValues.end()) {
+		return it->second;
+	}
 
-	uint8_t index = path[4] - '0';		// Get ODrive index
-	if (index >= MAX_NUMBER_OF_ODRIVES)
-		return;
+	return EndpointValue(EndpointValueType::INVALID);
+}
 
-	LOG_DEBUG("Executing function {}", path);
-	odrives[index]->executeFunction(identifier);
+EndpointValue Backend::readEndpointDirect(const BasicEndpoint& ep) {
+
+	if (ep.type == "bool")		{ auto temp = readEndpointDirectRaw<bool>(ep); if (temp) return EndpointValue(temp.value()); }
+	if (ep.type == "float")		{ auto temp = readEndpointDirectRaw<float>(ep); if (temp) return EndpointValue(temp.value()); }
+	if (ep.type == "uint8")		{ auto temp = readEndpointDirectRaw<uint8_t>(ep); if (temp) return EndpointValue(temp.value()); }
+	if (ep.type == "uint16")	{ auto temp = readEndpointDirectRaw<uint16_t>(ep); if (temp) return EndpointValue(temp.value()); }
+	if (ep.type == "uint32")	{ auto temp = readEndpointDirectRaw<uint32_t>(ep); if (temp) return EndpointValue(temp.value()); }
+	if (ep.type == "uint64")	{ auto temp = readEndpointDirectRaw<uint64_t>(ep); if (temp) return EndpointValue(temp.value()); }
+	if (ep.type == "int32")		{ auto temp = readEndpointDirectRaw<int32_t>(ep); if (temp) return EndpointValue(temp.value()); }
+
+	return EndpointValue(EndpointValueType::INVALID);
+}
+
+void Backend::writeEndpointDirect(const BasicEndpoint& ep, const EndpointValue& value) {
+	switch (value.type()) {
+	case EndpointValueType::BOOL:	writeEndpointDirectRaw(ep, value.get<bool>()); break;
+	case EndpointValueType::FLOAT:	writeEndpointDirectRaw(ep, value.get<float>()); break;
+	case EndpointValueType::UINT8:	writeEndpointDirectRaw(ep, value.get<uint8_t>()); break;
+	case EndpointValueType::UINT16:	writeEndpointDirectRaw(ep, value.get<uint16_t>()); break;
+	case EndpointValueType::UINT32:	writeEndpointDirectRaw(ep, value.get<uint32_t>()); break;
+	case EndpointValueType::UINT64:	writeEndpointDirectRaw(ep, value.get<uint64_t>()); break;
+	case EndpointValueType::INT32:	writeEndpointDirectRaw(ep, value.get<int32_t>()); break;
+	}
 }

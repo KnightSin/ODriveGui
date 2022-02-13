@@ -21,7 +21,9 @@ public:
 	bool loaded = false;
 	uint16_t jsonCRC = 0x00;
 	uint64_t serialNumber = 0;
+	std::string json;
 	std::vector<Endpoint> endpoints;
+	std::vector<BasicEndpoint> cachedEndpoints;
 
 	bool error = false;
 	int32_t axisError = 0x00;
@@ -29,7 +31,7 @@ public:
 	int32_t encoderError = 0x00;
 	int32_t controllerError = 0x00;
 
-	ODrive(std::shared_ptr<libusb::device> device, int odriveID) : device(device), odriveID(odriveID) {
+	ODrive(std::shared_ptr<libusb::device> device, int odriveID) : device(device) {
 		if (!device) {
 			throw std::runtime_error("ODrive device is nullptr!");
 		}
@@ -52,7 +54,7 @@ public:
 				return value;
 			}
 		}
-		LOG_WARN("Timeout: Failed to read endpoint {} from odrv{}", endpoint, odriveID);
+		LOG_WARN("Timeout: Failed to read endpoint {}", endpoint);
 		throw std::runtime_error("Timeout while reading from ODrive");
 	}
 
@@ -60,7 +62,7 @@ public:
 	T read(const std::string& identifier) {
 		auto endpoint = findEndpoint(identifier);
 		if (endpoint)
-			return read<T>(endpoint->get().id);
+			return read<T>(endpoint->id);
 		return 0;
 	}
 
@@ -82,7 +84,7 @@ public:
 	bool write(const std::string& identifier, T value) {
 		auto endpoint = findEndpoint(identifier);
 		if (endpoint) {
-			return write<T>(endpoint->get().id, value);
+			return write<T>(endpoint->id, value);
 		}
 		return false;
 	}
@@ -90,7 +92,7 @@ public:
 	void executeFunction(const std::string& identifier) {
 		auto endpoint = findEndpoint(identifier);
 		if (endpoint) {
-			sendWriteRequest(endpoint->get().id, 1, { 0 }, jsonCRC);
+			sendWriteRequest(endpoint->id, 1, { 0 }, jsonCRC);
 		}
 	}
 
@@ -147,6 +149,7 @@ public:
 
 	void write(uint8_t* data, size_t length) {
 		for (int i = 0; i < 5; i++) {
+			//LOG_DEBUG("Call to libusb::bulkWrite");
 			if (device->bulkWrite(data, length) != -1) {
 				return;
 			}
@@ -200,48 +203,42 @@ public:
 		return json;
 	}
 
-	Endpoint makeNode(njson node, const std::string& parentPath) {
-
-		std::string type = node["type"];
-
-		Endpoint ep;
-		if (parentPath != "") {
-			ep.identifier = parentPath + "." + (std::string)node["name"];
+	void disconnect() {
+		if (connected) {
+			device->close();
 		}
-		else {
-			ep.identifier = node["name"];
-		}
-		ep.name = node["name"];
-
-		if (type == "function") {
-			ep.id = node["id"];
-			ep.type = node["type"];
-
-			for (auto& input : node["inputs"]) {
-				ep.inputs.push_back(makeNode(input, ep.identifier));
-			}
-			for (auto& output : node["outputs"]) {
-				ep.outputs.push_back(makeNode(output, ep.identifier));
-			}
-		}
-		else if (type == "object") {
-			for (auto& subnode : node["members"]) {
-				ep.children.push_back(makeNode(subnode, ep.identifier));
-			}
-		}
-		else {		// All other numeric types
-			ep.id = node["id"];
-			ep.readonly = (node["access"] == "r");
-			ep.type = node["type"];
-		}
-
-		//LOG_DEBUG("{} -> \"{}\" id={} readonly={}", ep.path, ep.name, ep.id, ep.readonly);
-		return ep;
+		connected = false;
 	}
 
-	std::vector<Endpoint> generateEndpoints(const std::string& json) {
+	void load(int odriveID) {
+		connected = true;
+		json = getJSON();
+		jsonCRC = CRC16_JSON((uint8_t*)&json[0], json.length());
+		setODriveID(odriveID);
+
+		if (!connected)
+			return;
+
+		loaded = true;
+		LOG_DEBUG("ODrive JSON CRC is 0x{:04X}", jsonCRC);
+	}
+
+	void setODriveID(int odriveID) {
+		// Reload the cache
+		generateEndpoints(odriveID);
+	}
+
+	operator bool() {
+		return (bool)device && loaded;
+	}
+
+private:
+	void generateEndpoints(int odriveID) {
+
+		endpoints.clear();
+		cachedEndpoints.clear();
+
 		try {
-			std::vector<Endpoint> endpoints;
 
 			for (auto& subnode : njson::parse(json)) {
 				if (subnode["type"] == "json") {
@@ -249,96 +246,66 @@ public:
 					continue;
 				}
 
-				endpoints.push_back(makeNode(subnode, ""));
+				endpoints.push_back(makeNode(subnode, "", odriveID));
 			}
-
-			return endpoints;
 		}
 		catch (...) {
 			LOG_ERROR("Error while parsing json definition!");
 			disconnect();
+			endpoints.clear();
+			cachedEndpoints.clear();
+		}
+	}
+
+	Endpoint makeNode(njson node, const std::string& parentPath, int odriveID) {
+
+		Endpoint ep;
+		ep->name = node["name"];
+		ep->identifier = ((parentPath.size() > 0) ? (parentPath + ".") : ("")) + ep->name;
+		ep->fullPath = "odrv" + std::to_string(odriveID) + "." + ep->identifier;
+		ep->type = node["type"];
+		ep->odriveID = odriveID;
+
+		if (ep->type == "object") {			// Object with children
+			for (auto& subnode : node["members"]) {
+				ep.children.push_back(makeNode(subnode, ep->identifier, odriveID));
+			}
+		}
+		else if (ep->type == "function") {	// Function
+			ep->id = node["id"];
+
+			for (auto& input : node["inputs"]) {
+				ep.inputs.push_back(makeNode(input, ep->identifier, odriveID));
+			}
+			for (auto& output : node["outputs"]) {
+				ep.outputs.push_back(makeNode(output, ep->identifier, odriveID));
+			}
+			cachedEndpoints.push_back(ep.basic);
+		}
+		else {						// All other numeric types
+			ep->id = node["id"];
+			ep->readonly = (node["access"] == "r");
+			cachedEndpoints.push_back(ep.basic);
 		}
 
-		return {};
+		return ep;
 	}
 
-	void disconnect() {
-		if (connected) {
-			device->close();
-			LOG_ERROR("Connection to odrv{} has been lost!", odriveID);
-		}
-		connected = false;
-	}
+	BasicEndpoint* findEndpoint(const std::string& identifier) {
 
-	void load() {
-		connected = true;
-		std::string json = getJSON();
-		endpoints = generateEndpoints(json);
-		if (!connected) return;
-		jsonCRC = CRC16_JSON((uint8_t*)&json[0], json.length());
-		loaded = true;
-		LOG_DEBUG("ODrive JSON CRC is 0x{:04X}", jsonCRC);
-	}
-
-	void setODriveID(int odriveID) {
-		this->odriveID = odriveID;
-	}
-
-	operator bool() {
-		return (bool)device && loaded;
-	}
-
-	std::optional<std::reference_wrapper<Endpoint>> findEndpoint(const std::string& identifier) {
-		
 		if (!loaded)
-			return std::nullopt;
+			return nullptr;
 
-		for (Endpoint& ep : endpoints) {
-			auto e = testEndpoint(ep, identifier);
-			if (e) {
-				return e;
+		for (auto& ep : cachedEndpoints) {
+			if (ep.identifier == identifier) {
+				return &ep;
 			}
 		}
-		LOG_ERROR("Endpoint '{}' was not found in odrv{}", identifier, odriveID);
-		return std::nullopt;
+
+		LOG_ERROR("Endpoint '{}' was not found in the cache", identifier);
+		return nullptr;
 	}
 
-private:
-	std::optional<std::reference_wrapper<Endpoint>> testEndpoint(Endpoint& ep, const std::string& identifier) {
-		if (ep.identifier == identifier) {
-			return ep;
-		}
-
-		if (ep.children.size() > 0) {
-			for (Endpoint& _ep : ep.children) {
-				auto e = testEndpoint(_ep, identifier);
-				if (e) {
-					return e;
-				}
-			}
-		}
-
-		if (ep.inputs.size() > 0) {
-			for (Endpoint& _ep : ep.inputs) {
-				auto e = testEndpoint(_ep, identifier);
-				if (e) {
-					return e;
-				}
-			}
-		}
-
-		if (ep.outputs.size() > 0) {
-			for (Endpoint& _ep : ep.outputs) {
-				auto e = testEndpoint(_ep, identifier);
-				if (e) {
-					return e;
-				}
-			}
-		}
-		return std::nullopt;
-	}
-
-	int odriveID = -1;
 	std::shared_ptr<libusb::device> device;
 	inline static uint16_t sequenceNumber = 0;
 };

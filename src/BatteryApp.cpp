@@ -22,7 +22,7 @@ bool BatteryApp::OnStartup() {
 void BatteryApp::OnUpdate() {
 	if (framecount % 40 == 1) {
 		backend->scanDevices();
-		backend->updateEndpoints();
+		backend->updateEntryCache();
 
 		// Request all errors as a health check of the connection
 		for (int i = 0; i < MAX_NUMBER_OF_ODRIVES; i++) {

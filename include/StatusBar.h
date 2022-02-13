@@ -10,10 +10,16 @@
 #include "Backend.h"
 #include "config.h"
 
+#define ENDPOINT_TREE_INDENT 30
+
 class StatusBar : public Battery::ImGuiPanel<> {
 
 	int odriveSelected = 0;
-	std::map<std::string, uint64_t> endpointValues;		// uint64_t must be interpreted as the correct data type
+	bool openODriveInfo = false;
+	bool openEndpointSelector = false;
+
+	float windowWidth = 0.f;
+	float windowHeight = 0.f;
 
 public:
 	FontContainer* fonts = nullptr;
@@ -26,16 +32,13 @@ public:
 	void OnUpdate() override {
 		size = { Battery::GetMainWindow().GetSize().x, STATUS_BAR_HEIGHT };
 		position = { 0, Battery::GetMainWindow().GetSize().y - STATUS_BAR_HEIGHT };
+
+		windowWidth = Battery::GetMainWindow().GetSize().x;
+		windowHeight = Battery::GetMainWindow().GetSize().y;
 	}
 
-	void OnRender() override {
-		fonts = GetFontContainer<FontContainer>();
-		ImGui::PushFont(fonts->openSans25);
+	void makeODriveClickableFields() {
 
-		float windowWidth = Battery::GetMainWindow().GetSize().x;
-		float windowHeight = Battery::GetMainWindow().GetSize().y;
-
-		//ImGui::SetNextWindowContentSize({ STATUS_BAR_ELEMENTS_WIDTH * 4, -1 });
 		ImGui::Columns(4);
 
 		for (int i = 0; i < MAX_NUMBER_OF_ODRIVES; i++) {
@@ -44,8 +47,8 @@ public:
 			if (odrive) {
 
 				ImGui::SetCursorPosY(0);
-				if (ImGui::Selectable(("##Selectable" + std::to_string(i)).c_str(), false, 0, ImVec2(size.x / 4.f - 15, 45))) {
-					ImGui::OpenPopup("ODriveInfo");
+				openODriveInfo = ImGui::Selectable(("##Selectable" + std::to_string(i)).c_str(), false, 0, ImVec2(size.x / 4.f - 15, 45));
+				if (openODriveInfo) {
 					odriveSelected = i;
 				}
 
@@ -69,9 +72,41 @@ public:
 
 			ImGui::NextColumn();
 		}
+	}
 
+	template<typename T>
+	void errorTooltip(std::shared_ptr<ODrive>& odrive, std::map<std::string, std::string>& desc, int32_t& error) {
+		
+		if (ImGui::IsItemHovered()) {
+			ImGui::BeginTooltip();
+			ImGui::PushFont(fonts->openSans21);
+
+			for (size_t i = 0; i < T::_size(); i++) {
+				auto enumValue = T::_from_index((int32_t)i);
+				if (error & (int32_t)enumValue) {
+					auto& enumName = std::string(enumValue._to_string());
+					auto& enumDesc = desc[enumName.c_str()];
+
+					ImGui::TextColored(RED, "%s", enumName.c_str());
+					if (enumDesc.length() > 0) {
+						ImGui::SameLine();
+						ImGui::Text(" -> %s", enumDesc.c_str());
+					}
+				}
+			}
+			ImGui::PopFont();
+			ImGui::EndTooltip();
+		}
+	}
+
+	void drawODriveInfoWindow() {
+		
+		if (openODriveInfo) {
+			openODriveInfo = false;
+			ImGui::OpenPopup("ODriveInfo");
+		}
+		
 		// Handle the odrive info popup
-		bool openEndpointSelector = false;
 		ImGui::SetNextWindowPos({ (float)STATUS_BAR_ELEMENTS_WIDTH * odriveSelected, windowHeight - STATUS_BAR_HEIGHT - ODRIVE_POPUP_HEIGHT });
 		ImGui::SetNextWindowSize({ STATUS_BAR_ELEMENTS_WIDTH, ODRIVE_POPUP_HEIGHT });
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 12, 12 });
@@ -95,23 +130,20 @@ public:
 			ImGui::TextColored(GREEN, "%.03f V", vbus_voltage);
 
 			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0, 20 });
-			
+
 			ImGui::Text("JSON CRC: ");
 			ImGui::SameLine();
 			ImGui::TextColored(LIGHT_BLUE, "0x%02X", odrive->jsonCRC);
+			ImGui::PopStyleVar();
 
 			if (odrive->connected) {
-				if (ImGui::Button("Show endpoints", { -1, 40 })) {
-					openEndpointSelector = true;
-				}
-
-				ImGui::PopStyleVar();
+				openEndpointSelector = ImGui::Button("Show endpoints", { -1, 40 });
 
 				ImGui::Text("Axis error: ");
 				ImGui::SameLine();
 				if (odrive->axisError) {
 					ImGui::TextColored(RED, "0x%04X", odrive->axisError);
-					axisErrorTooltip(odrive);
+					errorTooltip<AxisError>(odrive, AxisErrorDesc, odrive->axisError);
 				}
 				else {
 					ImGui::TextColored(GREEN, "None");
@@ -121,7 +153,7 @@ public:
 				ImGui::SameLine();
 				if (odrive->motorError) {
 					ImGui::TextColored(RED, "0x%04X", odrive->motorError);
-					motorErrorTooltip(odrive);
+					errorTooltip<MotorError>(odrive, MotorErrorDesc, odrive->motorError);
 				}
 				else {
 					ImGui::TextColored(GREEN, "None");
@@ -131,7 +163,7 @@ public:
 				ImGui::SameLine();
 				if (odrive->encoderError) {
 					ImGui::TextColored(RED, "0x%04X", odrive->encoderError);
-					encoderErrorTooltip(odrive);
+					errorTooltip<EncoderError>(odrive, EncoderErrorDesc, odrive->encoderError);
 				}
 				else {
 					ImGui::TextColored(GREEN, "None");
@@ -143,7 +175,7 @@ public:
 				ImGui::SameLine();
 				if (odrive->controllerError) {
 					ImGui::TextColored(RED, "0x%04X", odrive->controllerError);
-					controllerErrorTooltip(odrive);
+					errorTooltip<ControllerError>(odrive, ControllerErrorDesc, odrive->controllerError);
 				}
 				else {
 					ImGui::TextColored(GREEN, "None");
@@ -160,195 +192,18 @@ public:
 			ImGui::EndPopup();
 		}
 		ImGui::PopStyleVar();
-
-		if (openEndpointSelector) {
-			ImGui::OpenPopup("EndpointSelector");
-			updateEndpointValues();
-		}
-
-		// Endpoint selector
-		float endpointSelectorWidth = 400;
-		ImGui::SetNextWindowPos({ 0, 0 });
-		ImGui::SetNextWindowSizeConstraints({ endpointSelectorWidth, -1 }, { windowWidth, -1 });
-		if (ImGui::BeginPopupContextWindow("EndpointSelector")) {
-			auto odrive = backend->odrives[std::clamp(odriveSelected, 0, 3)];
-
-			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0, 15 });
-			ImGui::Text("Endpoints of odrv%d:", odriveSelected);
-			ImGui::Separator();
-			ImGui::PopStyleVar();
-
-			showEndpoints(odriveSelected);
-
-			ImGui::EndPopup();
-		}
-
-		ImGui::PopFont();
-	}
-
-	void axisErrorTooltip(std::shared_ptr<ODrive>& odrive) {
-		if (ImGui::IsItemHovered()) {
-
-			ImGui::BeginTooltip();
-			for (size_t i = 0; i < magic_enum::enum_count<AxisError>(); i++) {
-				auto enumValue = magic_enum::enum_value<AxisError>(i);
-				if (odrive->axisError & (int32_t)enumValue) {
-					auto& enumName = std::string(magic_enum::enum_name(enumValue));
-					auto& enumDesc = AxisErrorDesc[enumName.c_str()];
-
-					ImGui::TextColored(RED, "%s", enumName.c_str());
-					if (enumDesc.length() > 0) {
-						ImGui::SameLine();
-						ImGui::Text(" -> %s", enumDesc.c_str());
-					}
-				}
-			}
-			ImGui::EndTooltip();
-		}
-	}
-
-	void motorErrorTooltip(std::shared_ptr<ODrive>& odrive) {
-		if (ImGui::IsItemHovered()) {
-
-			ImGui::BeginTooltip();
-			for (size_t i = 0; i < magic_enum::enum_count<MotorError>(); i++) {
-				auto enumValue = magic_enum::enum_value<MotorError>(i);
-				if (odrive->motorError & (int32_t)enumValue) {
-					auto& enumName = std::string(magic_enum::enum_name(enumValue));
-					auto& enumDesc = MotorErrorDesc[enumName.c_str()];
-
-					ImGui::TextColored(RED, "%s", enumName.c_str());
-					if (enumDesc.length() > 0) {
-						ImGui::SameLine();
-						ImGui::Text(" -> %s", enumDesc.c_str());
-					}
-				}
-			}
-			ImGui::EndTooltip();
-		}
-	}
-
-	void encoderErrorTooltip(std::shared_ptr<ODrive>& odrive) {
-		if (ImGui::IsItemHovered()) {
-
-			ImGui::BeginTooltip();
-			for (size_t i = 0; i < magic_enum::enum_count<EncoderError>(); i++) {
-				auto enumValue = magic_enum::enum_value<EncoderError>(i);
-				if (odrive->encoderError & (int32_t)enumValue) {
-					auto& enumName = std::string(magic_enum::enum_name(enumValue));
-					auto& enumDesc = EncoderErrorDesc[enumName.c_str()];
-
-					ImGui::TextColored(RED, "%s", enumName.c_str());
-					if (enumDesc.length() > 0) {
-						ImGui::SameLine();
-						ImGui::Text(" -> %s", enumDesc.c_str());
-					}
-				}
-			}
-			ImGui::EndTooltip();
-		}
-	}
-
-	void controllerErrorTooltip(std::shared_ptr<ODrive>& odrive) {
-		if (ImGui::IsItemHovered()) {
-
-			ImGui::BeginTooltip();
-			for (size_t i = 0; i < magic_enum::enum_count<ControllerError>(); i++) {
-				auto enumValue = magic_enum::enum_value<ControllerError>(i);
-				if (odrive->controllerError & (int32_t)enumValue) {
-					auto& enumName = std::string(magic_enum::enum_name(enumValue));
-					auto& enumDesc = ControllerErrorDesc[enumName.c_str()];
-
-					ImGui::TextColored(RED, "%s", enumName.c_str());
-					if (enumDesc.length() > 0) {
-						ImGui::SameLine();
-						ImGui::Text(" -> %s", enumDesc.c_str());
-					}
-				}
-			}
-			ImGui::EndTooltip();
-		}
-	}
-
-	void addEndpoint(std::reference_wrapper<Endpoint> endpoint, int odriveID) {
-		backend->addEndpoint(endpoint, odriveID);
 	}
 
 	template<typename T>
-	T getEndpointValue(const std::string& identifier) {
-		uint64_t rawValue = endpointValues[identifier];
-		T value;
-		memcpy(&value, &rawValue, sizeof(value));
-		return value;
-	}
+	void drawEndpointValue(ImVec4 color, Endpoint& ep, const char* fmt) {
 
-	void showEndpoint(Endpoint& ep, int indent) {
-
-		std::string path = "odrv" + std::to_string(odriveSelected) + "." + ep.identifier;
-		ImGui::SetCursorPosX(indent);
-
-		if (ep.children.size() > 0) {	// It's a node with children
-			if (ImGui::TreeNode(path.c_str())) {
-				for (Endpoint& e : ep.children) {
-					showEndpoint(e, indent + 30);
-				}
-				ImGui::TreePop();
-			}
+		EndpointValue& v = backend->getCachedEndpointValue(ep->fullPath);
+		T value = 0;
+		if (v.type() != EndpointValueType::INVALID) {
+			value = v.get<T>();
 		}
-		else if (ep.type == "function") {		// It's a function
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 40);
 
-			ImGui::Text("%s()   ->", path.c_str());
-			ImGui::SameLine();
-			ImGui::TextColored(COLOR_FUNCTION, "function");
-			ImGui::SameLine();
-			ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 70);
-			if (ImGui::Button(("+##" + ep.identifier).c_str(), { 40, 0 })) {
-				addEndpoint(ep, odriveSelected);
-			}
-		}
-		else {			// It's a numeric endpoint with a value
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 40);
-
-			ImGui::Text("%s   = ", path.c_str());
-			ImGui::SameLine();
-
-			if (ep.type == "float") {
-				renderEndpointValue(COLOR_FLOAT, ep, "%.03ff", getEndpointValue<float>(ep.identifier));
-			}
-			else if (ep.type == "uint8") {
-				renderEndpointValue(COLOR_UINT, ep, "%d", getEndpointValue<uint8_t>(ep.identifier));
-			}
-			else if (ep.type == "uint16") {
-				renderEndpointValue(COLOR_UINT, ep, "%d", getEndpointValue<uint16_t>(ep.identifier));
-			}
-			else if (ep.type == "uint32") {
-				renderEndpointValue(COLOR_UINT, ep, "%d", getEndpointValue<uint32_t>(ep.identifier));
-			}
-			else if (ep.type == "int32") {
-				renderEndpointValue(COLOR_UINT, ep, "%d", getEndpointValue<int32_t>(ep.identifier));
-			}
-			else if (ep.type == "uint64") {
-				renderEndpointValue(COLOR_UINT, ep, "%d", getEndpointValue<uint64_t>(ep.identifier));
-			}
-			else if (ep.type == "bool") {
-				renderEndpointValue(COLOR_BOOL, ep, getEndpointValue<bool>(ep.identifier) ? "true" : "false", 0);
-			}
-
-			ImGui::SameLine();
-			ImGui::Text("                ");
-			ImGui::SameLine();
-			ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 70);
-			if (ImGui::Button(("+##" + ep.identifier).c_str(), { 40, 0 })) {
-				addEndpoint(ep, odriveSelected);
-			}
-		}
-	}
-
-	template<typename T>
-	void renderEndpointValue(ImVec4 color, Endpoint& ep, const char* fmt, T value) {
-
-		const std::string& enumName = EndpointToEnum(ep, value);
+		const std::string& enumName = EndpointValueToEnumName(ep.basic, (int32_t)value);
 		if (enumName.length() > 0) {
 			ImGui::TextColored(color, "%s", enumName.c_str());
 		}
@@ -359,7 +214,7 @@ public:
 		if (ImGui::IsItemHovered()) {
 			ImGui::PushFont(fonts->openSans21);
 			ImGui::BeginTooltip();
-			ImGui::TextColored(color, "%s", ep.type.c_str());
+			ImGui::TextColored(color, "%s", ep->type.c_str());
 
 			if (enumName.length() > 0) {
 				ImGui::SameLine();
@@ -373,78 +228,133 @@ public:
 		}
 	}
 
-	void showEndpoints(int odriveID) {
-		auto& odrive = backend->odrives[odriveID];
-		if (!odrive)
-			return;
+	void drawEndpointValueBool(ImVec4 color, Endpoint& ep) {
 
-		for (Endpoint& ep : odrive->endpoints) {
-			showEndpoint(ep, ImGui::GetCursorPosX());
-		}
-	}
+		EndpointValue& v = backend->getCachedEndpointValue(ep->fullPath);
 
-	template<typename T>
-	void readEndpointValue(Endpoint& endpoint) {
-		T value = backend->odrives[odriveSelected]->read<T>(endpoint.identifier);
-		uint64_t rawValue;
-		memcpy(&rawValue, &value, sizeof(value));
-		endpointValues[endpoint.identifier] = rawValue;
-	}
+		ImGui::TextColored(color, "%s", v.get<bool>() ? "true" : "false");
 
-	void updateEndpointValue(Endpoint& endpoint) {
-
-		try {
-			if (endpoint.children.size() > 0) {	// It's a node with children
-				for (Endpoint& ep : endpoint.children) {
-					updateEndpointValue(ep);
-				}
-			}
-			else if (endpoint.type != "function") {		// It's a numeric endpoint with a value
-
-				if (endpoint.type == "float") {
-					readEndpointValue<float>(endpoint);
-				}
-				else if (endpoint.type == "bool") {
-					readEndpointValue<bool>(endpoint);
-				}
-				else if (endpoint.type == "uint8") {
-					readEndpointValue<uint8_t>(endpoint);
-				}
-				else if (endpoint.type == "uint16") {
-					readEndpointValue<uint8_t>(endpoint);
-				}
-				else if (endpoint.type == "uint32") {
-					readEndpointValue<uint32_t>(endpoint);
-				}
-				else if (endpoint.type == "int32") {
-					readEndpointValue<int32_t>(endpoint);
-				}
-				else if (endpoint.type == "uint64") {
-					readEndpointValue<uint64_t>(endpoint);
-				}
-			}
-		}
-		catch (...) {}
-	}
-
-	void updateEndpointValues() {
-		for (Endpoint& ep : backend->odrives[odriveSelected]->endpoints) {
-			updateEndpointValue(ep);
-		}
-	}
-
-	void ShowHelpMarker(const char* desc, ImFont* font) {
-		ImGui::TextDisabled("(?)");
-		if (ImGui::IsItemHovered())
-		{
-			ImGui::PushFont(font);
+		if (ImGui::IsItemHovered()) {
+			ImGui::PushFont(fonts->openSans21);
 			ImGui::BeginTooltip();
-			ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
-			ImGui::TextUnformatted(desc);
-			ImGui::PopTextWrapPos();
+			ImGui::TextColored(color, "%s", ep->type.c_str());
 			ImGui::EndTooltip();
 			ImGui::PopFont();
 		}
+	}
+	
+	void drawEndpoint(Endpoint& ep, int indent) {
+
+		ImGui::SetCursorPosX(indent);
+
+		if (ep.children.size() > 0) {	// It's a node with children
+			if (ImGui::TreeNode((ep->identifier + "##" + ep->fullPath).c_str())) {
+				for (Endpoint& e : ep.children) {
+					drawEndpoint(e, indent + ENDPOINT_TREE_INDENT);
+				}
+				ImGui::TreePop();
+			}
+		}
+		else if (ep->type == "function") {		// It's a function
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 40);
+
+			ImGui::Text("%s()   ->", ep->identifier.c_str());
+			ImGui::SameLine();
+			ImGui::TextColored(COLOR_FUNCTION, "function");
+			ImGui::SameLine();
+			ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 70);
+			if (ImGui::Button(("+##" + ep->fullPath).c_str(), { 40, 0 })) {
+				Endpoint e = ep;
+				e.children.clear();
+				backend->addEntry(Entry(e));
+			}
+		}
+		else {			// It's a numeric endpoint with a value
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 40);
+
+			ImGui::Text("%s   = ", ep->identifier.c_str());
+			ImGui::SameLine();
+
+			if (ep->type == "float") {
+				drawEndpointValue<float>(COLOR_FLOAT, ep, "%.03ff");
+			}
+			else if (ep->type == "uint8") {
+				drawEndpointValue<uint8_t>(COLOR_UINT, ep, "%d");
+			}
+			else if (ep->type == "uint16") {
+				drawEndpointValue<uint16_t>(COLOR_UINT, ep, "%d");
+			}
+			else if (ep->type == "uint32") {
+				drawEndpointValue<uint32_t>(COLOR_UINT, ep, "%d");
+			}
+			else if (ep->type == "uint64") {
+				drawEndpointValue<uint64_t>(COLOR_UINT, ep, "%d");
+			}
+			else if (ep->type == "int32") {
+				drawEndpointValue<uint32_t>(COLOR_UINT, ep, "%d");
+			}
+			else if (ep->type == "bool") {
+				drawEndpointValueBool(COLOR_BOOL, ep);
+			}
+
+			ImGui::SameLine();
+			ImGui::Text("                ");
+			ImGui::SameLine();
+			ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 70);
+			if (ImGui::Button(("+##" + ep->fullPath).c_str(), { 40, 0 })) {
+				Endpoint e = ep;
+				e.children.clear();
+				backend->addEntry(Entry(e));
+			}
+		}
+	}
+
+	void drawEndpointList() {
+
+		if (!backend->odrives[odriveSelected])
+			return;
+
+		for (Endpoint& ep : backend->odrives[odriveSelected]->endpoints) {
+			drawEndpoint(ep, ImGui::GetCursorPosX());
+		}
+	}
+
+	void drawEndpointSelectorWindow() {
+
+		if (openEndpointSelector) {
+			openEndpointSelector = false;
+			backend->updateEndpointCache(odriveSelected);
+			ImGui::OpenPopup("EndpointSelector");
+		}
+
+		// Endpoint selector
+		ImGui::SetNextWindowPos({ 0, 0 });
+		ImGui::SetNextWindowSizeConstraints({ ENDPOINT_SELECTOR_WIDTH, -1 }, { windowWidth, -1 });
+		if (ImGui::BeginPopupContextWindow("EndpointSelector")) {
+			auto odrive = backend->odrives[std::clamp(odriveSelected, 0, 3)];
+
+			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0, 15 });
+			ImGui::Text("Endpoints of odrv%d:", odriveSelected);
+			ImGui::Separator();
+			ImGui::PopStyleVar();
+
+			drawEndpointList();
+
+			ImGui::EndPopup();
+		}
+	}
+
+	void OnRender() override {
+		fonts = GetFontContainer<FontContainer>();
+		ImGui::PushFont(fonts->openSans25);
+
+		makeODriveClickableFields();
+
+		drawODriveInfoWindow();
+
+		drawEndpointSelectorWindow();
+
+		ImGui::PopFont();
 	}
 };
 
