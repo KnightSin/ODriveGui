@@ -12,7 +12,7 @@ static void drawEndpointChildWindow(const std::string& path, const std::string& 
 
 	ImGui::BeginGroup();
 	int x = ImGui::GetCursorPosX();
-	ImGui::TextWrapped("%s   =", path.c_str());
+	ImGui::Text("%s   =", path.c_str());
 	ImGui::SameLine();
 	if (ImGui::CalcTextSize(text.c_str()).x > (ImGui::GetWindowContentRegionWidth() - ImGui::GetCursorPosX() - 150)) {
 		ImGui::Dummy({ 0, 0 });
