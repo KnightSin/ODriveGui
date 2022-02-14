@@ -18,6 +18,7 @@ namespace libusb {
     device::device(libusb_device_handle* handle) {
         this->handle = handle;
         if (!handle) {
+            LOG_ERROR("[libusb]: Cannot construct a device with a null handle!");
             throw std::runtime_error("[libusb]: Cannot construct a device with a null handle!");
         }
     }
@@ -287,8 +288,6 @@ namespace libusb {
         if (handle == nullptr) {
             return nullptr;
         }
-
-        LOG_WARN("Opened device with handle 0x{:08X}", (size_t)handle);
 
         return std::make_shared<device>(handle);
     }
