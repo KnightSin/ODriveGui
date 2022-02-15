@@ -220,7 +220,7 @@ public:
 				ImGui::SameLine();
 				ImGui::Text("->");
 				ImGui::SameLine();
-				ImGui::TextColored(color, "%s (%d)", enumName.c_str(), value);
+				ImGui::TextColored(color, "%s (0x%X)", enumName.c_str(), value);
 			}
 
 			ImGui::EndTooltip();
