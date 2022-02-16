@@ -12,6 +12,17 @@ BatteryApp::BatteryApp() : Battery::Application(1280, 720, "ODriveGui") {
 
 bool BatteryApp::OnStartup() {
 
+	for (size_t i = 1; i < args.size(); i++) {
+		if (args[i] == "--verbose") {
+			LOG_SET_LOGLEVEL(BATTERY_LOG_LEVEL_TRACE);
+			LOG_INFO("Verbose logging enabled, set log level to LOG_LEVEL_TRACE");
+		}
+		else {
+			LOG_ERROR("[{}]: Unknown parameter! Only --verbose is available for extensive logging.", args[i]);
+			CloseApplication();
+		}
+	}
+
 	window.SetTitle("ODriveGui");
 	backend = std::make_unique<Backend>();
 

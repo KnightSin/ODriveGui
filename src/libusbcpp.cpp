@@ -156,12 +156,14 @@ namespace libusb {
     void HotplugListener::scanOnce(std::function<void(std::shared_ptr<device> device)> onConnect) {
 
         try {
+            LOG_TRACE("[libusbcpp]: HotplugListener: Scanning for devices...");
             auto newDevices = scanDevices(context);
             for (auto device : newDevices) {
                 if (!isDeviceKnown(device)) {
                     onConnect(openDevice(context, device.vendorID, device.productID));
                 }
             }
+            LOG_TRACE("[libusbcpp]: HotplugListener: Scan finished");
 
             knownDevices.clear();
             knownDevices = std::move(newDevices);
@@ -188,6 +190,7 @@ namespace libusb {
 
     void HotplugListener::listen(std::function<void(std::shared_ptr<device> device)> onConnect, float interval) {
 
+        LOG_TRACE("[libusbcpp]: Hotpluglistener: Thread started");
         while (running) {
 
             scanOnce(onConnect);
@@ -195,6 +198,7 @@ namespace libusb {
             Battery::Sleep(interval);
 
         }
+        LOG_TRACE("[libusbcpp]: Hotpluglistener: Thread stopped");
     }
 
 
@@ -208,6 +212,7 @@ namespace libusb {
 
     std::vector<libusb::deviceInfo> scanDevices(const context& ctx) {
         std::vector<libusb::deviceInfo> devices;
+        LOG_TRACE("[libusbcpp]: Scanning for devices...");
 
         libusb_device** rawDeviceList;
         size_t count = libusb_get_device_list(ctx, &rawDeviceList);
@@ -248,11 +253,13 @@ namespace libusb {
             devices.push_back(std::move(device));
         }
 
+        LOG_TRACE("[libusbcpp]: Scanning done");
         libusb_free_device_list(rawDeviceList, 1);
         return devices;
     }
 
     std::shared_ptr<device> openDevice(const context& ctx, uint16_t vendorID, uint16_t productID) {
+        LOG_TRACE("[libusbcpp]: Opening device vid={:04X} pid={:04X}", vendorID, productID);
 
         libusb_device** rawDeviceList;
         size_t count = libusb_get_device_list(ctx, &rawDeviceList);
@@ -279,6 +286,7 @@ namespace libusb {
         libusb_device_handle* handle = nullptr;
         if (found) {
             if (libusb_open(found, &handle) < 0) {
+                LOG_TRACE("[libusbcpp]: Device could not be opened!");
                 handle = nullptr;
             }
         }
@@ -286,8 +294,10 @@ namespace libusb {
         libusb_free_device_list(rawDeviceList, 1);
 
         if (handle == nullptr) {
+            LOG_TRACE("[libusbcpp]: Device handle was invalid!");
             return nullptr;
         }
+        LOG_TRACE("[libusbcpp]: Device opened");
 
         return std::make_shared<device>(handle);
     }
