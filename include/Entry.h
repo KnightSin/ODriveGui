@@ -18,6 +18,7 @@ public:
 	size_t selected = 0;
 
 	Entry(const Endpoint& bep);
+	Entry(const nlohmann::json& json);
 
 	void updateValue();
 
@@ -27,4 +28,6 @@ public:
 	void drawImGuiBoolInput(Endpoint& ep);
 	void drawEndpointInput(Endpoint& ep);
 	void draw();
+
+	nlohmann::json toJson();
 };

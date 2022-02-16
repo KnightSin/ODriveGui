@@ -7,10 +7,11 @@
 std::unique_ptr<Backend> backend;
 
 Backend::Backend() : hotplugListener(context) {
+	importEntries(Battery::GetExecutableDirectory() + "endpoints.json");
 }
 
 Backend::~Backend() {
-
+	exportEntries(Battery::GetExecutableDirectory() + "endpoints.json");
 }
 
 void Backend::scanDevices() {
@@ -91,6 +92,83 @@ void Backend::updateEntryCache() {
 	}
 }
 
+void Backend::importEntries(std::string path) {
+
+	if (path.length() == 0) {
+		path = Battery::PromptFileOpenDialog({ "*.json" }, Battery::GetMainWindow());
+		if (path.length() == 0)
+			return;
+	}
+
+	// Read the file
+	LOG_DEBUG("Loading entries from {}", path);
+	auto file = Battery::ReadFile(path);
+	if (file.fail()) {
+		LOG_ERROR("Failed to load entries from {}: Cannot open file!", path);
+		return;
+	}
+
+	// Now import it
+	entries.clear();
+	try {
+		njson json = njson::parse(file.content());
+		for (njson entry : json) {
+			Entry e(entry);
+			if (e.endpoint->id != -1) {
+				addEntry(e);
+			}
+			else {
+				LOG_WARN("Failed to import an entry: JSON definition was invalid!");
+			}
+		}
+	}
+	catch (...) {
+		LOG_ERROR("Error while importing: Not a valid JSON file!");
+		return;
+	}
+	LOG_DEBUG("Done");
+}
+
+void Backend::exportEntries(const std::string& file) {
+	nlohmann::json json = nlohmann::json::array();
+	for (Entry& e : entries) {
+		json.push_back(e.toJson());
+	}
+	std::string content = json.dump(4);
+
+	if (file.length() > 0) {
+		Battery::WriteFile(file, content);
+	}
+	else {
+		Battery::SaveFileWithDialog("json", content, Battery::GetMainWindow());
+	}
+}
+
+void Backend::loadDefaultEntries() {
+
+	std::string file = DEFAULT_ENTRIES_JSON;
+
+	LOG_DEBUG("Loading default entries...");
+	entries.clear();
+	try {
+		njson json = njson::parse(file);
+		for (njson entry : json) {
+			Entry e(entry);
+			if (e.endpoint->id != -1) {
+				addEntry(e);
+			}
+			else {
+				LOG_WARN("Failed to import an entry: JSON definition was invalid!");
+			}
+		}
+	}
+	catch (...) {
+		LOG_ERROR("Error while importing: Not a valid JSON file!");
+		return;
+	}
+	LOG_DEBUG("Done");
+}
+
 void Backend::executeFunction(int odriveID, const std::string& identifier) {
 
 	if (!odrives[odriveID])
@@ -154,3 +232,7 @@ void Backend::writeEndpointDirect(const BasicEndpoint& ep, const EndpointValue& 
 	case EndpointValueType::INT32:	writeEndpointDirectRaw(ep, value.get<int32_t>()); break;
 	}
 }
+
+const char* DEFAULT_ENTRIES_JSON = " \
+[] \
+";

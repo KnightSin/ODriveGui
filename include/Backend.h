@@ -7,6 +7,7 @@
 
 #define MAX_NUMBER_OF_ODRIVES 4
 #define REF std::reference_wrapper
+extern const char* DEFAULT_ENTRIES_JSON;
 
 class Backend;
 extern std::unique_ptr<Backend> backend;    // Accessible globally, allocated and deleted by BatteryApp
@@ -31,6 +32,9 @@ public:
     void addEntry(const Entry& entry);
     void removeEntry(const std::string& fullPath);
     void updateEntryCache();
+    void importEntries(std::string path = "");
+    void exportEntries(const std::string& file = "");
+    void loadDefaultEntries();
 
     void executeFunction(int odriveID, const std::string& identifier);
     void odriveDisconnected(int odriveID);

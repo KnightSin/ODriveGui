@@ -51,6 +51,12 @@ struct Endpoint {
 	std::vector<Endpoint> inputs;	// Only valid for functions
 	std::vector<Endpoint> outputs;	// Only valid for functions
 
+	Endpoint() = default;
+
+	Endpoint(const nlohmann::json& json) {
+		fromJson(json);
+	}
+
 	BasicEndpoint* operator->() {
 		return &basic;
 	}
@@ -70,6 +76,74 @@ struct Endpoint {
 			return IMGUI_FLAGS_FLOAT;
 		}
 		return IMGUI_FLAGS_INT;
+	}
+
+	bool fromJson(const nlohmann::json& json) {
+
+		try {
+			// BasicEndpoint
+			basic.identifier = json["identifier"];
+			basic.name = json["name"];
+			basic.type = json["type"];
+			basic.fullPath = json["full_path"];
+			basic.odriveID = json["odrive_id"];
+			basic.id = json["endpoint_id"];
+			basic.readonly = json["readonly"];
+
+			// inputs
+			if (json.contains("inputs")) {
+				nlohmann::json arr = json["inputs"];
+				for (nlohmann::json& input : arr) {
+					inputs.push_back(Endpoint(input));
+				}
+			}
+
+			// outputs
+			if (json.contains("outputs")) {
+				nlohmann::json arr = json["outputs"];
+				for (nlohmann::json& output : arr) {
+					outputs.push_back(Endpoint(output));
+				}
+			}
+
+			return true;
+		}
+		catch (...) {}
+
+		return false;
+	}
+
+	nlohmann::json toJson() {
+		nlohmann::json json;
+
+		// BasicEndpoint
+		json["identifier"] = basic.identifier;
+		json["name"] = basic.name;
+		json["type"] = basic.type;
+		json["full_path"] = basic.fullPath;
+		json["odrive_id"] = basic.odriveID;
+		json["endpoint_id"] = basic.id;
+		json["readonly"] = basic.readonly;
+
+		// inputs
+		if (inputs.size() > 0) {
+			nlohmann::json arr = nlohmann::json::array();
+			for (Endpoint& input : inputs) {
+				arr.push_back(input.toJson());
+			}
+			json["inputs"] = arr;
+		}
+
+		// outputs
+		if (outputs.size() > 0) {
+			nlohmann::json arr = nlohmann::json::array();
+			for (Endpoint& output : outputs) {
+				arr.push_back(output.toJson());
+			}
+			json["outputs"] = arr;
+		}
+
+		return json;
 	}
 };
 

@@ -36,6 +36,22 @@ public:
 		auto* fonts = GetFontContainer<FontContainer>();
 		ImGui::PushFont(fonts->openSans21);
 
+		ImGui::Text("List of Endpoints");
+		ImGui::SameLine();
+		ImGui::SetCursorPosX(ImGui::GetWindowContentRegionWidth() - 220);
+		if (ImGui::Button("Import")) {
+			backend->importEntries();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Export")) {
+			backend->exportEntries();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Load Default")) {
+			backend->loadDefaultEntries();
+		}
+		ImGui::Separator();
+
 		std::string toRemove;
 		for (Entry& e : backend->entries) {
 			e.draw();

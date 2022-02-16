@@ -45,6 +45,16 @@ Entry::Entry(const Endpoint& ep) : endpoint(ep), value(ep.basic.type) {
 	memset(imguiBuffer, 0, sizeof(imguiBuffer));
 }
 
+Entry::Entry(const nlohmann::json& json) {
+	entryID = entryIDCounter;
+	entryIDCounter++;
+	memset(imguiBuffer, 0, sizeof(imguiBuffer));
+
+	if (!endpoint.fromJson(json)) {
+		endpoint.basic.id = -1;
+	}
+}
+
 void Entry::updateValue() {
 
 	// Update the changed flags
@@ -250,4 +260,8 @@ void Entry::draw() {
 		}
 	}
 	ImGui::Separator();
+}
+
+nlohmann::json Entry::toJson() {
+	return endpoint.toJson();
 }
