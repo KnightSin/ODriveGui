@@ -13,7 +13,8 @@ echo Cleaning build directory...
 2>NUL rmdir /s /q "%~dp0build"
 
 echo Cleaning BatteryEngine...
-call "%~dp0modules/BatteryEngine/clean-win.bat"
+2>NUL rmdir /s /q "%~dp0modules/BatteryEngine/bin"
+2>NUL rmdir /s /q "%~dp0modules/BatteryEngine/build"
 
 echo Cleaning libusbcpp...
 2>NUL rmdir /s /q "%~dp0modules/libusbcpp/bin"
