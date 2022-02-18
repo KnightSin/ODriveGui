@@ -20,5 +20,3 @@ echo Cleaning libusbcpp...
 2>NUL rmdir /s /q "%~dp0modules/libusbcpp/build"
 
 echo Done
-
-Timeout 5
