@@ -74,20 +74,12 @@ project (projectName)
 
     -- Include directories for the compiler
     includedirs { "include" }
-    includedirs { "modules/ODriveNativeLib/src/**" }
  
 
 
     -- Main source files (all files in the project view)
-    files { "include/**" }
-    files { "src/**" }
-    files { "modules/ODriveNativeLib/src/**" }
+    files { "include/**", "src/**" }
 
-
-
-    -- libusb dependency
-    libdirs "lib"
-    links "libusb-1.0"
 
 
     -- Load the BatteryEngine dependency
