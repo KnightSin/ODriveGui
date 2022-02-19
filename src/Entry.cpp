@@ -56,6 +56,7 @@ Entry::Entry(const nlohmann::json& json) {
 }
 
 void Entry::updateValue() {
+	std::unique_lock<std::mutex> lock(mutex);
 
 	// Update the changed flags
 	oldValues[endpoint->fullPath] = value;
@@ -65,23 +66,30 @@ void Entry::updateValue() {
 	for (Endpoint& e : endpoint.outputs) {
 		oldValues[e->fullPath] = ioValues[e->fullPath];
 	}
+	lock.unlock();
 
 	// And now read
 	auto temp = backend->readEndpointDirect(endpoint.basic);
 	if (temp.type() != EndpointValueType::INVALID) {
+		lock.lock();
 		value = temp;
+		lock.unlock();
 	}
 
 	for (Endpoint& e : endpoint.inputs) {
 		auto temp = backend->readEndpointDirect(e.basic);
 		if (temp.type() != EndpointValueType::INVALID) {
+			lock.lock();
 			ioValues[e->fullPath] = temp;
+			lock.unlock();
 		}
 	}
 	for (Endpoint& e : endpoint.outputs) {
 		auto temp = backend->readEndpointDirect(e.basic);
 		if (temp.type() != EndpointValueType::INVALID) {
+			lock.lock();
 			ioValues[e->fullPath] = temp;
+			lock.unlock();
 		}
 	}
 }
@@ -184,6 +192,7 @@ void Entry::drawEndpointInput(Endpoint& ep) {
 }
 
 void Entry::draw() {
+	std::scoped_lock<std::mutex> lock(mutex);
 
 	ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10);
 

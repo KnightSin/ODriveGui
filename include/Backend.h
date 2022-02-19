@@ -2,10 +2,12 @@
 
 #include "ODrive.h"
 #include "libusbcpp.h"
-
 #include "Entry.h"
 
+#define USB_SCAN_INTERVAL 1.0f
+
 #define MAX_NUMBER_OF_ODRIVES 4
+
 #define REF std::reference_wrapper
 extern const char* DEFAULT_ENTRIES_JSON;
 
@@ -15,9 +17,11 @@ extern std::unique_ptr<Backend> backend;    // Accessible globally, allocated an
 class Backend {
 public:
 
-    libusb::context context;
-    libusb::HotplugListener hotplugListener;
+    libusbcpp::context context;
     std::array<std::shared_ptr<ODrive>, MAX_NUMBER_OF_ODRIVES> odrives;
+    std::shared_ptr<ODrive> temporaryDevice;
+    std::mutex temporaryDeviceMutex;
+    std::atomic<bool> deviceWaiting = false;
 
     std::vector<Entry> entries;   // Every entry is one line in the control panel
     std::map<std::string, EndpointValue> cachedEndpointValues;   // For endpoint selector, always only one odrive
@@ -25,9 +29,9 @@ public:
     Backend();
     ~Backend();
 
-    void scanDevices();
-    void deviceConnected(std::shared_ptr<libusb::device> device);
-    void connectDevice(std::shared_ptr<libusb::device> device);
+    void listenerThread();
+    void handleNewDevices();
+    void connectDevice(std::shared_ptr<ODrive> odrv);
 
     void addEntry(const Entry& entry);
     void removeEntry(const std::string& fullPath);
@@ -47,19 +51,11 @@ public:
     void writeEndpointDirect(const BasicEndpoint& ep, const EndpointValue& value);
 
     template<typename T>
-    std::optional<T> readEndpointDirectRaw(const BasicEndpoint& ep) {
-        if (odrives[ep.odriveID]) {
-            try {
-                return odrives[ep.odriveID]->read<T>(ep.identifier);
-            }
-            catch (...) {
-                if (odrives[ep.odriveID]->connected) {
-                    odrives[ep.odriveID]->disconnect();
-                    odriveDisconnected(ep.odriveID);
-                }
-            }
-        }
-        return std::nullopt;
+    bool readEndpointDirectRaw(const BasicEndpoint& ep, T* value_ptr) {
+        if (!odrives[ep.odriveID])
+            return false;
+
+        return odrives[ep.odriveID]->read<T>(ep.identifier, value_ptr);
     }
 
     template<typename T>
@@ -67,16 +63,11 @@ public:
         if (!odrives[ep.odriveID])
             return;
 
-        try {
-            odrives[ep.odriveID]->write<T>(ep.identifier, value);
-            LOG_DEBUG("Writing {} to endpoint {}", value, ep.fullPath);
-        }
-        catch (...) {
-            if (odrives[ep.odriveID]->connected) {
-                odrives[ep.odriveID]->disconnect();
-                odriveDisconnected(ep.odriveID);
-            }
-        }
+        odrives[ep.odriveID]->write<T>(ep.identifier, value);
+        LOG_DEBUG("Writing {} to endpoint {}", value, ep.fullPath);
     }
 
+private:
+    std::thread usbListener;
+    std::atomic<bool> stopListener = false;
 };

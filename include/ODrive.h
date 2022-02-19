@@ -3,12 +3,17 @@
 #include "libusbcpp.h"
 #include "CRC.h"
 #include "Endpoint.h"
+#include "libusbcpp.h"
 
 #include "json.hpp"
 
 #define ODRIVE_VENDOR_ID 0x1209
 #define ODRIVE_PRODUCT_ID 0x0D32
+
 #define ODRIVE_USB_INTERFACE 2
+#define ODRIVE_USB_READ_ENDPOINT (uint16_t)0x83
+#define ODRIVE_USB_WRITE_ENDPOINT (uint16_t)0x03
+
 #define ODRIVE_TIMEOUT 0.5		// Read/Write timeout in seconds
 
 typedef std::vector<uint8_t> buffer_t;
@@ -31,17 +36,21 @@ public:
 	int32_t encoderError = 0x00;
 	int32_t controllerError = 0x00;
 
-	ODrive(std::shared_ptr<libusb::device> device, int odriveID) : device(device) {
+	ODrive(libusbcpp::device device) : device(device) {
 		if (!device) {
 			throw std::runtime_error("ODrive device is nullptr!");
 		}
+		if (!device->claimInterface(ODRIVE_USB_INTERFACE)) {
+			throw std::runtime_error("Cannot claim USB interface");
+		}
+		load(999);
 	}
 
 	template<typename T>
-	T read(uint16_t endpoint) {
+	bool read(uint16_t endpoint, T* value_ptr) {
 
 		if (!loaded || !connected)
-			throw std::runtime_error("ODrive not yet loaded or not connected anymore");
+			return false;
 
 		std::lock_guard<std::mutex> lock(transferMutex);
 		uint16_t sequence = sendReadRequest(endpoint, sizeof(T), {}, jsonCRC);
@@ -50,21 +59,21 @@ public:
 		while (Battery::GetRuntime() < start + ODRIVE_TIMEOUT) {
 			auto& response = getResponse(sizeof(T));
 			if ((response.first & 0b0111111111111111) == sequence && response.second.size() == sizeof(T)) {
-				T value = 0;
-				memcpy(&value, &response.second[0], sizeof(value));
-				return value;
+				memcpy(value_ptr, &response.second[0], sizeof(T));
+				return true;
 			}
 		}
 		LOG_WARN("Timeout: Failed to read endpoint {}", endpoint);
-		throw std::runtime_error("Timeout while reading from ODrive");
+		return false;
 	}
 
 	template<typename T>
-	T read(const std::string& identifier) {
+	bool read(const std::string& identifier, T* value_ptr) {
 		auto endpoint = findEndpoint(identifier);
-		if (endpoint)
-			return read<T>(endpoint->id);
-		return 0;
+		if (!endpoint)
+			return false;
+
+		return read<T>(endpoint->id, value_ptr);
 	}
 
 	template<typename T>
@@ -100,24 +109,17 @@ public:
 	}
 
 	void updateErrors() {
-		axisError = read<int32_t>("axis0.error");
-		motorError = read<int32_t>("axis0.motor.error");
-		encoderError = read<int32_t>("axis0.encoder.error");
-		controllerError = read<int32_t>("axis0.controller.error");
+		read<int32_t>("axis0.error", &axisError);
+		read<int32_t>("axis0.motor.error", &motorError);
+		read<int32_t>("axis0.encoder.error", &encoderError);
+		read<int32_t>("axis0.controller.error", &controllerError);
 
 		error = axisError || motorError || encoderError || controllerError;
 	}
 
 	uint64_t getSerialNumber() {
-		serialNumber = read<uint64_t>("serial_number");
+		read<uint64_t>("serial_number", &serialNumber);
 		return serialNumber;
-	}
-
-	void disconnect() {
-		if (connected) {
-			device->close();
-		}
-		connected = false;
 	}
 
 	void load(int odriveID) {
@@ -141,10 +143,14 @@ public:
 	}
 
 	operator bool() {
-		return (bool)device && loaded;
+		return (bool)(connected && device && loaded);
 	}
 
 private:
+	void disconnect() {
+		connected = false;
+	}
+
 	void generateEndpoints(int odriveID) {
 
 		endpoints.clear();
@@ -257,8 +263,7 @@ private:
 
 	void write(uint8_t* data, size_t length) {
 		for (int i = 0; i < 5; i++) {
-			//LOG_DEBUG("Call to libusb::bulkWrite");
-			if (device->bulkWrite(data, length) != -1) {
+			if (device->bulkWrite(data, length, ODRIVE_USB_WRITE_ENDPOINT) != -1) {
 				return;
 			}
 		}
@@ -266,11 +271,11 @@ private:
 	}
 
 	std::vector<uint8_t> read(size_t expectedLength) {
-		auto data = device->bulkRead(expectedLength + 2);
+		auto data = device->bulkRead(expectedLength + 2, ODRIVE_USB_READ_ENDPOINT);
 		if (data.size() == 0) {
 			disconnect();
 		}
-		return std::move(data);
+		return data;
 	}
 
 	std::pair<uint16_t, buffer_t> getResponse(size_t expectedLength) {
@@ -311,7 +316,7 @@ private:
 		return json;
 	}
 
-	std::shared_ptr<libusb::device> device;
+	libusbcpp::device device;
 	inline static uint16_t sequenceNumber = 0;
 	std::mutex transferMutex;
 };

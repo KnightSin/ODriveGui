@@ -6,38 +6,58 @@
 
 std::unique_ptr<Backend> backend;
 
-Backend::Backend() : hotplugListener(context) {
+Backend::Backend() {
 	importEntries(Battery::GetExecutableDirectory() + "endpoints.json");
+	usbListener = std::thread(std::bind(&Backend::listenerThread, this));
 }
 
 Backend::~Backend() {
 	exportEntries(Battery::GetExecutableDirectory() + "endpoints.json");
+	stopListener = true;
+	usbListener.join();
 }
 
-void Backend::scanDevices() {
-	using namespace std::placeholders;
-	hotplugListener.scanOnce(std::bind(&Backend::deviceConnected, this, _1));
-}
+void Backend::listenerThread() {
+	while (!stopListener) {
+		auto& devices = libusbcpp::findDevice(context, ODRIVE_VENDOR_ID, ODRIVE_PRODUCT_ID);
+		for (auto& device : devices) {
+			try {
 
-void Backend::deviceConnected(std::shared_ptr<libusb::device> device) {
-	if (device->getInfo().vendorID == ODRIVE_VENDOR_ID && device->getInfo().productID == ODRIVE_PRODUCT_ID) {
-		connectDevice(device);
+				LOG_DEBUG("New device connected, probing...");
+				std::shared_ptr<ODrive> odrive = std::make_shared<ODrive>(device);
+				odrive->getSerialNumber();
+
+				while (deviceWaiting) {
+					Battery::Sleep(USB_SCAN_INTERVAL);
+				}
+				std::lock_guard<std::mutex> lock(temporaryDeviceMutex);
+				temporaryDevice = odrive;
+				deviceWaiting = true;
+			}
+			catch (const std::exception& e) {
+				LOG_ERROR("Failed to connect device: {}", e.what());
+			}
+		}
+		Battery::Sleep(USB_SCAN_INTERVAL);
 	}
 }
 
-void Backend::connectDevice(std::shared_ptr<libusb::device> device) {
+void Backend::handleNewDevices() {
+	if (deviceWaiting) {
+		std::lock_guard<std::mutex> lock(temporaryDeviceMutex);
+		connectDevice(temporaryDevice);
+		temporaryDevice.reset();
+		deviceWaiting = false;
+	}
+}
 
-	LOG_DEBUG("New device connected, probing...");
-	std::shared_ptr<ODrive> odrive = std::make_shared<ODrive>(device, -1);
-	device->claimInterface(ODRIVE_USB_INTERFACE);
-	odrive->load(999);
-	uint64_t serialNumber = odrive->getSerialNumber();
+void Backend::connectDevice(std::shared_ptr<ODrive> odrv) {
 
 	// Check if a device with the same serial number is already known
 	int index = -1;
 	for (int i = 0; i < MAX_NUMBER_OF_ODRIVES; i++) {
 		if (odrives[i]) {
-			if (odrives[i]->serialNumber == serialNumber) {
+			if (odrives[i]->serialNumber == odrv->serialNumber) {
 				index = i;
 				break;
 			}
@@ -58,16 +78,16 @@ void Backend::connectDevice(std::shared_ptr<libusb::device> device) {
 		return;
 	}
 
-	if (serialNumber == 0) {
+	if (odrv->serialNumber == 0) {
 		LOG_ERROR("Device can't be connected: Cannot read serial number!");
 		return;
 	}
 
-	odrive->setODriveID(index);
+	odrv->setODriveID(index);
 
-	odrives[index] = odrive;	// Transfer ownership into the odrives array
+	odrives[index] = odrv;	// Transfer ownership into the odrives array
 
-	LOG_INFO("Device with serial number 0x{:08X} connected as odrv{}: {}", serialNumber, index, device->getInfo().description);
+	LOG_INFO("Device with serial number 0x{:08X} connected as odrv{}", odrv->serialNumber, index);
 }
 
 void Backend::addEntry(const Entry& entry) {
@@ -208,15 +228,17 @@ EndpointValue Backend::getCachedEndpointValue(const std::string& fullPath) {
 	return EndpointValue(EndpointValueType::INVALID);
 }
 
+#define READ_ENDPOINT(_type, T)	if (ep.type == _type)	{ T temp = 0; if (readEndpointDirectRaw<T>(ep, &temp)) return EndpointValue(temp); }
+
 EndpointValue Backend::readEndpointDirect(const BasicEndpoint& ep) {
 
-	if (ep.type == "bool")		{ auto temp = readEndpointDirectRaw<bool>(ep); if (temp) return EndpointValue(temp.value()); }
-	if (ep.type == "float")		{ auto temp = readEndpointDirectRaw<float>(ep); if (temp) return EndpointValue(temp.value()); }
-	if (ep.type == "uint8")		{ auto temp = readEndpointDirectRaw<uint8_t>(ep); if (temp) return EndpointValue(temp.value()); }
-	if (ep.type == "uint16")	{ auto temp = readEndpointDirectRaw<uint16_t>(ep); if (temp) return EndpointValue(temp.value()); }
-	if (ep.type == "uint32")	{ auto temp = readEndpointDirectRaw<uint32_t>(ep); if (temp) return EndpointValue(temp.value()); }
-	if (ep.type == "uint64")	{ auto temp = readEndpointDirectRaw<uint64_t>(ep); if (temp) return EndpointValue(temp.value()); }
-	if (ep.type == "int32")		{ auto temp = readEndpointDirectRaw<int32_t>(ep); if (temp) return EndpointValue(temp.value()); }
+	READ_ENDPOINT("bool", bool);
+	READ_ENDPOINT("float", float);
+	READ_ENDPOINT("uint8", uint8_t);
+	READ_ENDPOINT("uint16", uint16_t);
+	READ_ENDPOINT("uint32", uint32_t);
+	READ_ENDPOINT("uint64", uint64_t);
+	READ_ENDPOINT("int32", int32_t);
 
 	return EndpointValue(EndpointValueType::INVALID);
 }

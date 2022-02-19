@@ -13,8 +13,6 @@ class BatteryApp : public Battery::Application {
 public:
 	BatteryApp();
 
-	void enumerateODrives();
-
 	bool OnStartup() override;
 	void OnUpdate() override;
 	void OnRender() override;

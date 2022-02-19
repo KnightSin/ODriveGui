@@ -8,17 +8,26 @@
 
 BatteryApp::BatteryApp() : Battery::Application(1280, 720, "ODriveGui") {
 	LOG_SET_LOGLEVEL(BATTERY_LOG_LEVEL_DEBUG);
+	libusbcpp::setLogLevel(libusbcpp::LOG_LEVEL_WARN);
 }
 
 bool BatteryApp::OnStartup() {
 
 	for (size_t i = 1; i < args.size(); i++) {
 		if (args[i] == "--verbose") {
+			LOG_SET_LOGLEVEL(BATTERY_LOG_LEVEL_DEBUG);
+			libusbcpp::setLogLevel(libusbcpp::LOG_LEVEL_DEBUG);
+			LOG_INFO("Verbose logging enabled, set log level to LOG_LEVEL_DEBUG");
+		}
+		else if (args[i] == "--trace") {
 			LOG_SET_LOGLEVEL(BATTERY_LOG_LEVEL_TRACE);
-			LOG_INFO("Verbose logging enabled, set log level to LOG_LEVEL_TRACE");
+			libusbcpp::setLogLevel(libusbcpp::LOG_LEVEL_TRACE);
+			LOG_INFO("Trace logging enabled, set log level to LOG_LEVEL_TRACE");
 		}
 		else {
-			LOG_ERROR("[{}]: Unknown parameter! Only --verbose is available for extensive logging.", args[i]);
+			LOG_ERROR("[{}]: Unknown parameter! Available:", args[i]);
+			LOG_ERROR("                                       --verbose  -> Debug logging");
+			LOG_ERROR("                                       --trace    -> All the logging");
 			CloseApplication();
 		}
 	}
@@ -40,18 +49,12 @@ bool BatteryApp::OnStartup() {
 }
 
 void BatteryApp::OnUpdate() {
-	static float s = 0;
+	backend->handleNewDevices();
+	// Request all errors as a health check of the connection
 	if (framecount % 30 == 1) {
-		s = Battery::GetRuntime();
-		backend->scanDevices();
-
-		// Request all errors as a health check of the connection
 		for (int i = 0; i < MAX_NUMBER_OF_ODRIVES; i++) {
 			if (backend->odrives[i]) {
-				try {
-					backend->odrives[i]->updateErrors();
-				}
-				catch (...) {}
+				//backend->odrives[i]->updateErrors();
 			}
 		}
 	}
@@ -63,6 +66,7 @@ void BatteryApp::OnRender() {
 
 void BatteryApp::OnShutdown() {
 	shouldClose = true;
+	window.Hide();
 	backendUpdateThread.join();
 	backend.reset();
 }
@@ -73,8 +77,7 @@ void BatteryApp::OnEvent(Battery::Event* e) {
 	}
 	else if (e->GetType() == Battery::EventType::KeyPressed) {
 		if (static_cast<Battery::KeyPressedEvent*>(e)->keycode == ALLEGRO_KEY_SPACE) {
-			//std::string json = Backend::getInstance().ODrives[0].getJSON();
-			//ui->controlPanel->endpoints = ODrive::generateEndpoints(json, 0);
+			// Space pressed
 		}
 	}
 }

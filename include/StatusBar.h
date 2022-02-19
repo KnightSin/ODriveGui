@@ -116,10 +116,7 @@ public:
 			static float vbus_voltage = 0.f;
 
 			if (Battery::GetApp().framecount % 10 == 0) {
-				try {
-					vbus_voltage = odrive->read<float>("vbus_voltage");
-				}
-				catch (...) {}
+				odrive->read<float>("vbus_voltage", &vbus_voltage);
 			}
 
 

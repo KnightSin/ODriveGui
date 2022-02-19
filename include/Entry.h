@@ -21,13 +21,32 @@ public:
 	Entry(const nlohmann::json& json);
 
 	void updateValue();
+	void draw();
 
+	nlohmann::json toJson();
+
+	Entry(const Entry& e) {
+		operator=(e);
+		memset(imguiBuffer, 0, sizeof(imguiBuffer));
+	}
+
+	void operator=(const Entry& e) {
+		endpoint = e.endpoint;
+		value = e.value;
+		ioValues = e.ioValues;
+		oldValues = e.oldValues;
+		toBeRemoved = e.toBeRemoved;
+		entryID = entryID;
+		selected = 0;
+		memset(imguiBuffer, 0, sizeof(imguiBuffer));
+	}
+
+private:
 	bool drawImGuiNumberInputField(const std::string& imguiIdentifier, ImGuiInputTextFlags flags);
 	void drawImGuiDropdownField(const std::string& imguiIdentifier, const std::vector<std::string>& enumNames);
 	void drawImGuiNumberInput(Endpoint& ep, bool isfloat);
 	void drawImGuiBoolInput(Endpoint& ep);
 	void drawEndpointInput(Endpoint& ep);
-	void draw();
 
-	nlohmann::json toJson();
+	std::mutex mutex;
 };

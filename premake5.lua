@@ -18,11 +18,9 @@ workspace (projectName)
 
 
 
--- The BatteryEngine Subproject
-batteryIncludeDirs = {}
-batteryLinkFiles = {}
-    
-include "modules/BatteryEngine"  -- Import the BatteryEngine's premake5.lua
+-- Dependencies (git submodules)
+include "modules/BatteryEngine"
+include "modules/libusbcpp"
 
 
 
@@ -33,7 +31,8 @@ project (projectName)
 	staticruntime "on"
     location "build"
     targetname (projectName)
-    targetdir "bin"
+    targetdir "bin/%{cfg.buildcfg}"
+    targetname "%{prj.name}"
 
     system "Windows"
     entrypoint "mainCRTStartup"
@@ -82,9 +81,19 @@ project (projectName)
 
 
 
-    -- Load the BatteryEngine dependency
-    dependson("BatteryEngine");
-    includedirs { batteryIncludeDirs }
-    links { batteryLinkFiles }
+    -- BatteryEngine dependency
+    dependson "BatteryEngine"
+    includedirs (BATTERYENGINE_INCLUDE_DIRS)
+    libdirs (BATTERYENGINE_LINK_DIRS)
+    links (BATTERYENGINE_LINKS)
+    
+    
+    -- libusbcpp dependency
+    dependson "libusbcpp"
+    includedirs (LIBUSBCPP_INCLUDE_DIRS)
+    libdirs (LIBUSBCPP_LINK_DIRS)
+    links (LIBUSBCPP_LINKS)
+
+
 
     linkoptions { "/IGNORE:4099" }  -- Ignore warning that no .pdb file is found for debugging
