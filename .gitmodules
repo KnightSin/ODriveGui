@@ -1,6 +1,6 @@
-[submodule "modules/BatteryEngine"]
-	path = modules/BatteryEngine
-	url = https://github.com/HerrNamenlos123/BatteryEngine.git
+[submodule "modules/Battery"]
+	path = modules/Battery
+	url = https://github.com/HerrNamenlos123/Battery.git
 [submodule "modules/libusbcpp"]
 	path = modules/libusbcpp
 	url = https://github.com/HerrNamenlos123/libusbcpp.git
