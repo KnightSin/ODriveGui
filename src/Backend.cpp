@@ -14,6 +14,7 @@ Backend::Backend() {
 Backend::~Backend() {
 	exportEntries(Battery::GetExecutableDirectory() + "endpoints.json");
 	stopListener = true;
+	LOG_DEBUG("Waiting for USB listener to join");
 	usbListener.join();
 }
 

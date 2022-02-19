@@ -204,7 +204,7 @@ void Entry::draw() {
 		ImGui::SameLine();
 
 		bool changed = (value != oldValues[endpoint->fullPath]);	// vvv Test if an enum name is available for this endpoint
-		const std::string& enumName = EndpointValueToEnumName(endpoint.basic, value.get<int64_t>());
+		const std::string& enumName = EndpointValueToEnumName(endpoint.basic, value.get<int64_t>(), value.type());
 		drawEndpointChildWindow(endpoint->fullPath.c_str(), endpoint->type.c_str(), value.toString(), endpoint.getColor(), enumName, value.get<int64_t>(), changed, entryID);
 		if (!endpoint->readonly) {
 			drawEndpointInput(endpoint);

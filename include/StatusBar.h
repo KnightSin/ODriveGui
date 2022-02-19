@@ -200,7 +200,7 @@ public:
 			value = v.get<T>();
 		}
 
-		const std::string& enumName = EndpointValueToEnumName(ep.basic, (int32_t)value);
+		const std::string& enumName = EndpointValueToEnumName(ep.basic, (int32_t)value, v.type());
 		if (enumName.length() > 0) {
 			ImGui::TextColored(color, "%s", enumName.c_str());
 		}

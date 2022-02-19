@@ -130,8 +130,11 @@ BETTER_ENUM(AxisRequestedState, int32_t,
 
 #define ASSIGN_ENUM_STRING(string, _enum) else if (ep.identifier == string) { return _enum::_from_integral(value)._to_string(); }
 
-inline static const std::string EndpointValueToEnumName(const BasicEndpoint& ep, int32_t value) {
-	
+inline static const std::string EndpointValueToEnumName(const BasicEndpoint& ep, int32_t value, EndpointValueType type) {
+
+	if (type == EndpointValueType::INVALID)
+		return "";
+
 	if (false) {}
 	ASSIGN_ENUM_STRING("axis0.requested_state", AxisRequestedState)
 	ASSIGN_ENUM_STRING("axis1.requested_state", AxisRequestedState)
