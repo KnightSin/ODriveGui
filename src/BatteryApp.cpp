@@ -54,7 +54,7 @@ void BatteryApp::OnUpdate() {
 	if (framecount % 30 == 1) {
 		for (int i = 0; i < MAX_NUMBER_OF_ODRIVES; i++) {
 			if (backend->odrives[i]) {
-				//backend->odrives[i]->updateErrors();
+				backend->odrives[i]->updateErrors();
 			}
 		}
 	}
